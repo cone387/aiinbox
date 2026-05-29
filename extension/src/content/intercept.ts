@@ -1,33 +1,29 @@
-// Content script running in ISOLATED world.
-// Injects a page-level script to intercept fetch, then relays data to background.
+// Content script (ISOLATED world): injects page interceptor and relays messages to background
 
-// Inject the interceptor into the page's MAIN world
+// Inject the page-level interceptor script
 const script = document.createElement('script')
 script.src = chrome.runtime.getURL('assets/page-intercept.js')
 script.onload = () => script.remove()
 ;(document.head || document.documentElement).appendChild(script)
 
-// Listen for messages from the injected page script via window.postMessage
+// Listen for messages from the injected page script
 window.addEventListener('message', (event) => {
   if (event.source !== window) return
   if (!event.data || event.data.source !== 'aiinbox-page') return
 
   const { type, payload } = event.data
 
-  if (type === 'RESPONSE_COMPLETE') {
+  if (type === 'RESPONSE_COMPLETE' && payload) {
+    console.log('[AI Inbox CS] Relaying to background:', payload.platform, payload.body?.length, 'bytes')
     chrome.runtime.sendMessage({
       type: 'RESPONSE_COMPLETE',
       ...payload,
-    }).catch(() => {})
+    }).then((resp) => {
+      console.log('[AI Inbox CS] Background response:', resp)
+    }).catch((err) => {
+      console.error('[AI Inbox CS] Failed to send to background:', err)
+    })
   }
 })
 
-// Notify background that content script is loaded
-const host = window.location.hostname
-let platform = 'unknown'
-if (host.includes('openai.com') || host.includes('chatgpt.com')) platform = 'chatgpt'
-else if (host.includes('gemini.google.com')) platform = 'gemini'
-else if (host.includes('tongyi.aliyun.com') || host.includes('qianwen')) platform = 'tongyi'
-else if (host.includes('doubao.com')) platform = 'doubao'
-
-console.log(`[AI Inbox] Content script loaded for ${platform}`)
+console.log('[AI Inbox CS] Content script ready')

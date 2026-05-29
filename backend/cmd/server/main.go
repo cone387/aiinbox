@@ -82,6 +82,12 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "database": cfg.Database.Driver})
 	})
 
+	// Authenticated health check (verifies token is valid)
+	r.GET("/health/auth", authMiddleware.RequireAuth(), func(c *gin.Context) {
+		userID := middleware.GetUserID(c)
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "user_id": userID, "database": cfg.Database.Driver})
+	})
+
 	// API v1 routes
 	v1 := r.Group("/api/v1")
 

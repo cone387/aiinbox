@@ -14,6 +14,7 @@ interface PopupState {
   config: ExtensionConfig | null
   stats: StorageStats | null
   serverHealthy: boolean | null
+  authHealthy: boolean | null
   loading: boolean
 }
 
@@ -32,6 +33,7 @@ function App() {
     config: null,
     stats: null,
     serverHealthy: null,
+    authHealthy: null,
     loading: true,
   })
 
@@ -59,7 +61,7 @@ function App() {
         const server = cfg.servers[cfg.activeServerIndex || 0]
         if (server?.url) {
           const healthResp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url })
-          setState((s) => ({ ...s, serverHealthy: healthResp?.healthy ?? false }))
+          setState((s) => ({ ...s, serverHealthy: healthResp?.server ?? false, authHealthy: healthResp?.auth ?? false }))
         }
       }
     } catch {
@@ -135,14 +137,21 @@ function App() {
             <div style={{ fontSize: '11px', color: '#64748b' }}>{'\u670D\u52A1'}</div>
             <div style={{ fontWeight: 500 }}>{activeServer?.name || '\u672A\u914D\u7F6E'}</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{
-              width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block',
-              backgroundColor: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af',
-            }} />
-            <span style={{ fontSize: '11px', color: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af' }}>
-              {state.serverHealthy === true ? '\u6B63\u5E38' : state.serverHealthy === false ? '\u4E0D\u53EF\u7528' : '...'}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{
+                width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block',
+                backgroundColor: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af',
+              }} />
+              <span style={{ fontSize: '10px', color: '#6b7280' }}>{'\u670D\u52A1'}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{
+                width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block',
+                backgroundColor: state.authHealthy === true ? '#22c55e' : state.authHealthy === false ? '#ef4444' : '#9ca3af',
+              }} />
+              <span style={{ fontSize: '10px', color: '#6b7280' }}>Token</span>
+            </div>
           </div>
         </div>
       </div>

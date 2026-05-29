@@ -100,17 +100,29 @@ function stopCollecting(): void {
   console.log('[AI Inbox] Stopped collecting')
 }
 
-async function checkServerHealth(url: string): Promise<boolean> {
+async function checkServerHealth(url: string, token?: string): Promise<{ server: boolean; auth: boolean }> {
+  let serverOk = false
+  let authOk = false
   try {
     const resp = await fetch(`${url}/health`, { method: 'GET', signal: AbortSignal.timeout(5000) })
     if (resp.ok) {
       const data = await resp.json()
-      return data.status === 'ok'
+      serverOk = data.status === 'ok'
     }
-    return false
-  } catch {
-    return false
+  } catch {}
+
+  if (serverOk && token) {
+    try {
+      const resp = await fetch(`${url}/health/auth`, {
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer ' + token },
+        signal: AbortSignal.timeout(5000),
+      })
+      authOk = resp.ok
+    } catch {}
   }
+
+  return { server: serverOk, auth: authOk }
 }
 
 function detectPlatformFromUrl(url: string): Platform | null {
@@ -224,8 +236,9 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
       }
 
       case 'HEALTH_CHECK': {
-        const healthy = await checkServerHealth(message.url as string)
-        sendResponse({ healthy })
+        const server = config.servers?.[message.index ?? config.activeServerIndex]
+        const result = await checkServerHealth(message.url as string, server?.token)
+        sendResponse(result)
         break
       }
 
