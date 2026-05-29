@@ -236,8 +236,10 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
       }
 
       case 'HEALTH_CHECK': {
-        const server = config.servers?.[message.index ?? config.activeServerIndex]
-        const result = await checkServerHealth(message.url as string, server?.token)
+        const url = message.url as string
+        // Use token from message if provided, otherwise look up from config
+        const token = message.token || config.servers?.find((s) => s.url === url)?.token || ''
+        const result = await checkServerHealth(url, token)
         sendResponse(result)
         break
       }

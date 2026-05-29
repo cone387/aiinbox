@@ -42,7 +42,7 @@ function App() {
     const server = c.servers?.[c.activeServerIndex || 0]
     if (!server?.url) return
     try {
-      const resp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url })
+      const resp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url, token: server.token })
       setState((s) => ({ ...s, serverOk: resp?.server ?? false, authOk: resp?.auth ?? false }))
     } catch {}
   }, [state.config])
