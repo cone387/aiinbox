@@ -1,9 +1,18 @@
 import { getAdapterByPlatform } from '../adapters'
-import { collector } from '../storage/collector'
 import { syncService } from '../sync/service'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG } from '../types'
 
-// Platform URL detection patterns (inline to avoid import issues)
+// Lazy-load collector to avoid Dexie initialization issues at service worker startup
+let _collector: any = null
+async function getCollector() {
+  if (!_collector) {
+    const mod = await import('../storage/collector')
+    _collector = mod.collector
+  }
+  return _collector
+}
+
+// Platform URL detection patterns
 const PLATFORM_PATTERNS: Record<string, string[]> = {
   chatgpt: ['chat.openai.com', 'chatgpt.com'],
   gemini: ['gemini.google.com'],
@@ -24,8 +33,8 @@ chrome.runtime.onStartup.addListener(() => {
   loadConfig()
 })
 
-// Load on script start
-loadConfig()
+// Load on script start (wrapped to catch any initialization errors)
+setTimeout(() => loadConfig(), 100)
 
 async function loadConfig(): Promise<void> {
   try {
@@ -74,9 +83,9 @@ function stopCollecting(): void {
 
 async function checkServerHealth(url: string): Promise<boolean> {
   try {
-    const response = await fetch(`${url}/health`, { method: 'GET', signal: AbortSignal.timeout(5000) })
-    if (response.ok) {
-      const data = await response.json()
+    const resp = await fetch(`${url}/health`, { method: 'GET', signal: AbortSignal.timeout(5000) })
+    if (resp.ok) {
+      const data = await resp.json()
       return data.status === 'ok'
     }
     return false
@@ -124,12 +133,14 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           timestamp: new Date().toISOString(),
         })
 
+        const coll = await getCollector()
+
         if (result.success && result.conversation) {
-          await collector.save(result.conversation)
+          await coll.save(result.conversation)
           syncService.triggerSync()
           console.log(`[AI Inbox] Saved conversation from ${platform} (${result.conversation.messages.length} messages)`)
         } else if (message.body?.length > 0) {
-          await collector.saveRaw(platform, message.body.slice(0, 1_000_000))
+          await coll.saveRaw(platform, message.body.slice(0, 1_000_000))
           console.warn(`[AI Inbox] Parse failed for ${platform}: ${result.error}`)
         }
 
@@ -150,9 +161,10 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           activePlatform = detectPlatformFromUrl(currentUrl)
         } catch {}
 
-        let stats = { totalConversations: 0, pendingSync: 0, byPlatform: {} }
+        let stats = { totalConversations: 0, pendingSync: 0, byPlatform: {} as Record<string, number> }
         try {
-          stats = await collector.getStats()
+          const coll = await getCollector()
+          stats = await coll.getStats()
         } catch {}
 
         sendResponse({
@@ -190,8 +202,7 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
       }
 
       case 'HEALTH_CHECK': {
-        const url = message.url as string
-        const healthy = await checkServerHealth(url)
+        const healthy = await checkServerHealth(message.url as string)
         sendResponse({ healthy })
         break
       }

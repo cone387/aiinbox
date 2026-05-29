@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Platform, ExtensionConfig, ExtensionStatus } from '../types'
-import { StorageStats } from '../storage/collector'
+
+interface StorageStats {
+  totalConversations: number
+  pendingSync: number
+  byPlatform: Record<string, number>
+}
 
 interface PopupState {
   status: ExtensionStatus

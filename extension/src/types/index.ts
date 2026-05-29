@@ -68,11 +68,3 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   enabledPlatforms: [Platform.ChatGPT, Platform.Gemini, Platform.Tongyi, Platform.Doubao],
   isCollecting: true,
 }
-
-// URL patterns for each platform to detect if current tab is an AI chat page
-export const PLATFORM_URL_PATTERNS: Record<Platform, string[]> = {
-  [Platform.ChatGPT]: ['chat.openai.com', 'chatgpt.com'],
-  [Platform.Gemini]: ['gemini.google.com'],
-  [Platform.Tongyi]: ['tongyi.aliyun.com', 'qianwen.aliyun.com'],
-  [Platform.Doubao]: ['doubao.com'],
-}
