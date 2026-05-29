@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -94,10 +95,16 @@ func (m *AuthMiddleware) validateJWT(tokenStr string) (*UserClaims, error) {
 
 func (m *AuthMiddleware) validateAPIToken(token string) (*models.User, error) {
 	var apiToken models.APIToken
-	err := m.DB.Where("token = ? AND expires_at > ?", token, time.Now()).First(&apiToken).Error
+	err := m.DB.Where("token = ?", token).First(&apiToken).Error
 	if err != nil {
 		return nil, err
 	}
+
+	// Check expiry manually
+	if !apiToken.ExpiresAt.IsZero() && apiToken.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("token expired")
+	}
+
 	// Update last_used
 	now := time.Now()
 	m.DB.Model(&apiToken).Update("last_used", &now)
