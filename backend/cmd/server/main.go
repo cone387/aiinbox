@@ -11,6 +11,7 @@ import (
 	"github.com/cone387/aiinbox/backend/internal/database"
 	"github.com/cone387/aiinbox/backend/internal/handlers"
 	"github.com/cone387/aiinbox/backend/internal/middleware"
+	"github.com/cone387/aiinbox/backend/internal/search"
 	"github.com/cone387/aiinbox/backend/internal/services"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -50,11 +51,14 @@ func main() {
 	// Setup services
 	authService := services.NewAuthService(db, &cfg.Auth)
 	syncService := services.NewSyncService(db)
+	searchEngine := search.NewEngine(db, cfg.Database.Driver)
 
 	// Setup handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	syncHandler := handlers.NewSyncHandler(syncService)
 	convHandler := handlers.NewConversationHandler(db)
+	searchHandler := handlers.NewSearchHandler(searchEngine)
+	statsHandler := handlers.NewStatsHandler(db)
 
 	// Setup middleware
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.JWTSecret, db)
@@ -107,6 +111,13 @@ func main() {
 		protected.GET("/conversations/:id", convHandler.GetConversation)
 		protected.GET("/conversations/:id/messages", convHandler.GetMessages)
 		protected.DELETE("/conversations", convHandler.BatchDelete)
+
+		// Search routes
+		protected.GET("/search", searchHandler.Search)
+
+		// Stats routes
+		protected.GET("/stats/overview", statsHandler.GetOverview)
+		protected.GET("/stats/timeline", statsHandler.GetTimeline)
 	}
 
 	// Start server
