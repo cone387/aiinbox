@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Card, Form, Input, Button, message, Modal, Typography } from 'antd'
 import { CopyOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import { generateAPIToken } from '../api/auth'
-import { batchDelete } from '../api/conversations'
 import { useAuthStore } from '../stores/authStore'
 
 const { Paragraph } = Typography

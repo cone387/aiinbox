@@ -1,4 +1,4 @@
-import { getAdapter } from '../adapters'
+import { getAdapter, getAdapterByPlatform } from '../adapters'
 import { collector } from '../storage/collector'
 import { syncService } from '../sync/service'
 import { ExtensionConfig, Platform, SyncStatus } from '../types'
@@ -143,9 +143,6 @@ async function processStreamBuffer(requestId: string, isComplete: boolean): Prom
 
   streamBuffers.delete(requestId)
 
-  const adapter = getAdapter('')
-  // Find adapter by platform
-  const { getAdapterByPlatform } = await import('../adapters')
   const platformAdapter = getAdapterByPlatform(buffer.platform)
   if (!platformAdapter) return
 
