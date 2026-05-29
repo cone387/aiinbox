@@ -7,7 +7,7 @@ type User struct {
 	Username        string     `gorm:"uniqueIndex;size:64;not null" json:"username"`
 	PasswordHash    string     `gorm:"size:256;not null" json:"-"`
 	APIToken        string     `gorm:"size:512" json:"-"`
-	APITokenExpires *time.Time `json:"-"`
+	APITokenExpires *time.Time `gorm:"column:api_token_expires" json:"-"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
