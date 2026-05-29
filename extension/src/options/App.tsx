@@ -55,8 +55,8 @@ function App() {
     const server = config.servers[index]
     if (!server?.url) return
     setHealthStatus((s) => ({ ...s, [index]: null }))
-    const resp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url })
-    setHealthStatus((s) => ({ ...s, [index]: resp?.healthy ?? false }))
+    const resp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url, token: server.token })
+    setHealthStatus((s) => ({ ...s, [index]: resp?.server && resp?.auth ? true : false }))
   }
 
   function addServer() {
