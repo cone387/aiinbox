@@ -1,224 +1,207 @@
-import { getAdapter, getAdapterByPlatform } from '../adapters'
+import { getAdapterByPlatform } from '../adapters'
 import { collector } from '../storage/collector'
 import { syncService } from '../sync/service'
-import { ExtensionConfig, Platform, SyncStatus } from '../types'
+import { ExtensionConfig, Platform, DEFAULT_CONFIG, PLATFORM_URL_PATTERNS } from '../types'
 import { secureStorage } from '../utils/crypto'
 
-// Stream buffers for SSE responses
-const streamBuffers = new Map<string, { data: string; lastChunkTime: number; platform: Platform }>()
-
-// Timeout checker interval
-const STREAM_TIMEOUT_MS = 30000
-const MAX_STREAM_SIZE = 50 * 1024 * 1024 // 50MB
-
-let config: ExtensionConfig | null = null
+let config: ExtensionConfig = DEFAULT_CONFIG
 let isCollecting = false
 
-// Initialize on install
+// Initialize
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('AI Chat Collector: Extension installed')
+  console.log('[AI Inbox] Extension installed')
   loadConfig()
 })
 
-// Initialize on startup
 chrome.runtime.onStartup.addListener(() => {
   loadConfig()
 })
 
-// Load config and start collecting
+// Load on script start (service worker wake)
+loadConfig()
+
 async function loadConfig(): Promise<void> {
   const stored = await chrome.storage.local.get('config')
   if (stored.config) {
     config = stored.config as ExtensionConfig
+  } else {
+    // Save default config on first run
+    await chrome.storage.local.set({ config: DEFAULT_CONFIG })
+    config = DEFAULT_CONFIG
+  }
 
-    // Decrypt token
-    if (config.authToken) {
-      try {
-        config.authToken = await secureStorage.decrypt(config.authToken)
-      } catch {
-        // Token not encrypted or decryption failed
-      }
-    }
-
-    if (config.isCollecting && config.serverUrl && config.authToken) {
-      startCollecting()
-    }
+  const server = config.servers[config.activeServerIndex]
+  if (config.isCollecting && server?.url && server?.token) {
+    startCollecting()
   }
 }
 
 function startCollecting(): void {
-  if (isCollecting || !config) return
+  if (isCollecting) return
   isCollecting = true
 
-  // Start sync service
+  const server = config.servers[config.activeServerIndex]
+  if (!server) return
+
   syncService.start({
-    serverUrl: config.serverUrl,
-    authToken: config.authToken,
+    serverUrl: server.url,
+    authToken: server.token,
     mode: config.syncMode,
     batchInterval: config.batchInterval,
     maxRetries: 5,
   })
 
-  // Start stream timeout checker
-  setInterval(checkStreamTimeouts, 5000)
-
   updateIcon('active')
-  console.log('AI Chat Collector: Started collecting')
+  console.log('[AI Inbox] Started collecting')
 }
 
 function stopCollecting(): void {
   isCollecting = false
   syncService.stop()
-  streamBuffers.clear()
   updateIcon('paused')
-  console.log('AI Chat Collector: Stopped collecting')
+  console.log('[AI Inbox] Stopped collecting')
 }
 
-// Listen for fetch events via chrome.webRequest
-// Note: In Manifest V3, we use chrome.webRequest.onCompleted for non-streaming
-// For streaming, we use a content script approach or declarativeNetRequest
-// Here we use chrome.webRequest.onBeforeRequest to detect requests,
-// then fetch the response ourselves in the background
-
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    if (!isCollecting || !config) return
-    if (details.method !== 'POST') return
-
-    const adapter = getAdapter(details.url)
-    if (!adapter) return
-
-    // Check if platform is enabled
-    if (!config.enabledPlatforms.includes(adapter.platform)) return
-
-    // Track this request for response capture
-    console.log(`AI Chat Collector: Intercepted ${adapter.platform} request: ${details.url}`)
-  },
-  {
-    urls: [
-      'https://chat.openai.com/backend-api/conversation*',
-      'https://chatgpt.com/backend-api/conversation*',
-      'https://gemini.google.com/_/BardChatUi/data/*',
-      'https://gemini.google.com/app/_/data/*',
-      'https://qianwen.biz.aliyun.com/dialog/conversation*',
-      'https://tongyi.aliyun.com/qianwen/api/chat*',
-      'https://www.doubao.com/chat/api/chat*',
-      'https://www.doubao.com/samantha/chat/completion*',
-    ],
-  }
-)
-
-chrome.webRequest.onCompleted.addListener(
-  async (details) => {
-    if (!isCollecting || !config) return
-
-    const adapter = getAdapter(details.url)
-    if (!adapter) return
-    if (!config.enabledPlatforms.includes(adapter.platform)) return
-
-    // For completed requests, check if we have buffered stream data
-    const buffer = streamBuffers.get(details.requestId)
-    if (buffer) {
-      await processStreamBuffer(details.requestId, true)
+// Health check for a server
+async function checkServerHealth(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${url}/health`, { method: 'GET', signal: AbortSignal.timeout(5000) })
+    if (response.ok) {
+      const data = await response.json()
+      return data.status === 'ok'
     }
-  },
-  {
-    urls: [
-      'https://chat.openai.com/backend-api/conversation*',
-      'https://chatgpt.com/backend-api/conversation*',
-      'https://gemini.google.com/_/BardChatUi/data/*',
-      'https://gemini.google.com/app/_/data/*',
-      'https://qianwen.biz.aliyun.com/dialog/conversation*',
-      'https://tongyi.aliyun.com/qianwen/api/chat*',
-      'https://www.doubao.com/chat/api/chat*',
-      'https://www.doubao.com/samantha/chat/completion*',
-    ],
-  }
-)
-
-// Process buffered stream data
-async function processStreamBuffer(requestId: string, isComplete: boolean): Promise<void> {
-  const buffer = streamBuffers.get(requestId)
-  if (!buffer) return
-
-  streamBuffers.delete(requestId)
-
-  const platformAdapter = getAdapterByPlatform(buffer.platform)
-  if (!platformAdapter) return
-
-  const result = platformAdapter.parseResponse({
-    requestId,
-    tabId: 0,
-    platform: buffer.platform,
-    url: '',
-    statusCode: 200,
-    body: buffer.data,
-    isComplete,
-    timestamp: new Date().toISOString(),
-  })
-
-  if (result.success && result.conversation) {
-    await collector.save(result.conversation)
-    syncService.triggerSync()
-    console.log(`AI Chat Collector: Saved conversation from ${buffer.platform}`)
-  } else if (!result.success && buffer.data.length > 0) {
-    // Save raw data for failed parses
-    await collector.saveRaw(buffer.platform, buffer.data.slice(0, 1_000_000))
-    console.warn(`AI Chat Collector: Parse failed for ${buffer.platform}: ${result.error}`)
+    return false
+  } catch {
+    return false
   }
 }
 
-// Check for timed-out streams
-function checkStreamTimeouts(): void {
-  const now = Date.now()
-  for (const [requestId, buffer] of streamBuffers) {
-    if (now - buffer.lastChunkTime > STREAM_TIMEOUT_MS) {
-      console.log(`AI Chat Collector: Stream timeout for ${requestId}`)
-      processStreamBuffer(requestId, false)
+// Detect platform from tab URL
+function detectPlatformFromUrl(url: string): Platform | null {
+  for (const [platform, patterns] of Object.entries(PLATFORM_URL_PATTERNS)) {
+    if (patterns.some((p) => url.includes(p))) {
+      return platform as Platform
     }
   }
+  return null
 }
 
-// Receive stream chunks from content script
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === 'STREAM_CHUNK') {
-    const { requestId, data, platform } = message
-    const buffer = streamBuffers.get(requestId) || { data: '', lastChunkTime: 0, platform }
-
-    // Size limit check
-    if (buffer.data.length + data.length > MAX_STREAM_SIZE) {
-      processStreamBuffer(requestId, false)
-      sendResponse({ ok: true })
-      return
-    }
-
-    buffer.data += data
-    buffer.lastChunkTime = Date.now()
-    streamBuffers.set(requestId, buffer)
-    sendResponse({ ok: true })
-  } else if (message.type === 'STREAM_END') {
-    processStreamBuffer(message.requestId, true)
-    sendResponse({ ok: true })
-  } else if (message.type === 'GET_STATUS') {
-    sendResponse({
-      isCollecting,
-      status: isCollecting ? 'active' : 'paused',
-    })
-  } else if (message.type === 'TOGGLE_COLLECTING') {
-    if (isCollecting) {
-      stopCollecting()
-    } else {
-      startCollecting()
-    }
-    sendResponse({ isCollecting })
-  } else if (message.type === 'CONFIG_UPDATED') {
-    loadConfig()
-    sendResponse({ ok: true })
-  }
-  return true
+// Handle messages from content script and popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  handleMessage(message, sender, sendResponse)
+  return true // Keep channel open for async response
 })
 
-// Update extension icon
+async function handleMessage(message: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
+  switch (message.type) {
+    case 'RESPONSE_COMPLETE': {
+      if (!isCollecting) { sendResponse({ ok: false }); return }
+
+      const platform = message.platform as Platform
+      if (!config.enabledPlatforms.includes(platform)) { sendResponse({ ok: false }); return }
+
+      const adapter = getAdapterByPlatform(platform)
+      if (!adapter) { sendResponse({ ok: false }); return }
+
+      const result = adapter.parseResponse({
+        requestId: message.requestId,
+        tabId: 0,
+        platform,
+        url: message.url,
+        statusCode: 200,
+        body: message.body,
+        isComplete: message.isComplete,
+        timestamp: new Date().toISOString(),
+      })
+
+      if (result.success && result.conversation) {
+        await collector.save(result.conversation)
+        syncService.triggerSync()
+        console.log(`[AI Inbox] Saved conversation from ${platform} (${result.conversation.messages.length} messages)`)
+      } else if (message.body?.length > 0) {
+        await collector.saveRaw(platform, message.body.slice(0, 1_000_000))
+        console.warn(`[AI Inbox] Parse failed for ${platform}: ${result.error}`)
+      }
+
+      sendResponse({ ok: true })
+      break
+    }
+
+    case 'STREAM_CHUNK': {
+      // For now just log, full response handled by RESPONSE_COMPLETE
+      sendResponse({ ok: true })
+      break
+    }
+
+    case 'GET_STATUS': {
+      const tab = await chrome.tabs.query({ active: true, currentWindow: true })
+      const currentUrl = tab[0]?.url || ''
+      const activePlatform = detectPlatformFromUrl(currentUrl)
+
+      const stats = await collector.getStats()
+      sendResponse({
+        isCollecting,
+        status: isCollecting ? 'active' : 'paused',
+        activePlatform,
+        config,
+        stats,
+      })
+      break
+    }
+
+    case 'TOGGLE_COLLECTING': {
+      if (isCollecting) {
+        stopCollecting()
+      } else {
+        startCollecting()
+      }
+      sendResponse({ isCollecting })
+      break
+    }
+
+    case 'TOGGLE_PLATFORM': {
+      const platform = message.platform as Platform
+      if (config.enabledPlatforms.includes(platform)) {
+        config.enabledPlatforms = config.enabledPlatforms.filter((p) => p !== platform)
+      } else {
+        config.enabledPlatforms.push(platform)
+      }
+      await chrome.storage.local.set({ config })
+      sendResponse({ enabledPlatforms: config.enabledPlatforms })
+      break
+    }
+
+    case 'HEALTH_CHECK': {
+      const url = message.url as string
+      const healthy = await checkServerHealth(url)
+      sendResponse({ healthy })
+      break
+    }
+
+    case 'SAVE_CONFIG': {
+      config = message.config as ExtensionConfig
+      await chrome.storage.local.set({ config })
+
+      // Restart sync if needed
+      if (isCollecting) {
+        stopCollecting()
+        startCollecting()
+      }
+      sendResponse({ ok: true })
+      break
+    }
+
+    case 'CONFIG_UPDATED': {
+      await loadConfig()
+      sendResponse({ ok: true })
+      break
+    }
+
+    default:
+      sendResponse({ ok: false, error: 'unknown message type' })
+  }
+}
+
 function updateIcon(status: 'active' | 'paused' | 'error'): void {
   const colors: Record<string, string> = {
     active: '#22c55e',

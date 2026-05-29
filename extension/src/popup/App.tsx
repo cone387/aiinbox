@@ -1,17 +1,32 @@
 import { useEffect, useState } from 'react'
-import { collector, StorageStats } from '../storage/collector'
-import { ExtensionStatus } from '../types'
+import { Platform, ExtensionConfig, ExtensionStatus, PLATFORM_URL_PATTERNS } from '../types'
+import { StorageStats } from '../storage/collector'
 
 interface PopupState {
   status: ExtensionStatus
+  isCollecting: boolean
+  activePlatform: Platform | null
+  config: ExtensionConfig | null
   stats: StorageStats | null
+  serverHealthy: boolean | null
   loading: boolean
+}
+
+const platformLabels: Record<Platform, string> = {
+  [Platform.ChatGPT]: 'ChatGPT',
+  [Platform.Gemini]: 'Gemini',
+  [Platform.Tongyi]: '通义千问',
+  [Platform.Doubao]: '豆包',
 }
 
 function App() {
   const [state, setState] = useState<PopupState>({
     status: 'paused',
+    isCollecting: false,
+    activePlatform: null,
+    config: null,
     stats: null,
+    serverHealthy: null,
     loading: true,
   })
 
@@ -21,15 +36,25 @@ function App() {
 
   async function loadData() {
     try {
-      // Get status from background
       const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' })
-      const stats = await collector.getStats()
-
       setState({
         status: response?.status || 'paused',
-        stats,
+        isCollecting: response?.isCollecting || false,
+        activePlatform: response?.activePlatform || null,
+        config: response?.config || null,
+        stats: response?.stats || null,
+        serverHealthy: null,
         loading: false,
       })
+
+      // Check server health
+      if (response?.config?.servers?.length) {
+        const server = response.config.servers[response.config.activeServerIndex]
+        if (server?.url) {
+          const healthResp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url })
+          setState((s) => ({ ...s, serverHealthy: healthResp?.healthy ?? false }))
+        }
+      }
     } catch {
       setState((s) => ({ ...s, loading: false }))
     }
@@ -39,120 +64,131 @@ function App() {
     const response = await chrome.runtime.sendMessage({ type: 'TOGGLE_COLLECTING' })
     setState((s) => ({
       ...s,
+      isCollecting: response?.isCollecting ?? !s.isCollecting,
       status: response?.isCollecting ? 'active' : 'paused',
     }))
+  }
+
+  async function togglePlatform(platform: Platform) {
+    const response = await chrome.runtime.sendMessage({ type: 'TOGGLE_PLATFORM', platform })
+    if (response?.enabledPlatforms && state.config) {
+      setState((s) => ({
+        ...s,
+        config: { ...s.config!, enabledPlatforms: response.enabledPlatforms },
+      }))
+    }
   }
 
   function openOptions() {
     chrome.runtime.openOptionsPage()
   }
 
-  const statusColors: Record<ExtensionStatus, string> = {
-    active: '#22c55e',
-    paused: '#9ca3af',
-    error: '#ef4444',
-  }
-
-  const statusLabels: Record<ExtensionStatus, string> = {
-    active: '正在收集',
-    paused: '已暂停',
-    error: '错误',
-  }
-
   if (state.loading) {
-    return (
-      <div style={{ padding: '16px', textAlign: 'center' }}>
-        <p>加载中...</p>
-      </div>
-    )
+    return <div style={{ padding: '16px', textAlign: 'center', width: '340px' }}>加载中...</div>
   }
+
+  const activeServer = state.config?.servers?.[state.config.activeServerIndex]
 
   return (
-    <div style={{ padding: '16px', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ width: '340px', padding: '12px', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '13px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <h2 style={{ margin: 0, fontSize: '16px' }}>AI Chat Collector</h2>
-        <div
-          style={{
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            backgroundColor: statusColors[state.status],
-          }}
-          title={statusLabels[state.status]}
-        />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '15px', fontWeight: 600 }}>AI Inbox</span>
+          <span style={{
+            display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
+            backgroundColor: state.isCollecting ? '#22c55e' : '#9ca3af',
+          }} />
+        </div>
+        <button onClick={toggleCollecting} style={{
+          padding: '4px 10px', fontSize: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer',
+          backgroundColor: state.isCollecting ? '#fee2e2' : '#dcfce7',
+          color: state.isCollecting ? '#dc2626' : '#16a34a',
+        }}>
+          {state.isCollecting ? '暂停' : '开始'}
+        </button>
       </div>
 
-      {/* Status */}
-      <div style={{ marginBottom: '16px', padding: '8px', backgroundColor: '#f3f4f6', borderRadius: '6px' }}>
+      {/* Active Platform Detection */}
+      <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>当前页面</div>
+        {state.activePlatform ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', display: 'inline-block' }} />
+            <span style={{ fontWeight: 500 }}>{platformLabels[state.activePlatform]}</span>
+            <span style={{ color: '#22c55e', fontSize: '11px' }}>（正在监听）</span>
+          </div>
+        ) : (
+          <span style={{ color: '#94a3b8' }}>非 AI 聊天页面</span>
+        )}
+      </div>
+
+      {/* Server Status */}
+      <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '13px', color: '#6b7280' }}>状态: {statusLabels[state.status]}</span>
-          <button
-            onClick={toggleCollecting}
-            style={{
-              padding: '4px 12px',
-              fontSize: '12px',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              backgroundColor: state.status === 'active' ? '#fee2e2' : '#dcfce7',
-              color: state.status === 'active' ? '#dc2626' : '#16a34a',
-            }}
-          >
-            {state.status === 'active' ? '暂停' : '开始'}
-          </button>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>服务</div>
+            <div style={{ fontWeight: 500 }}>{activeServer?.name || '未配置'}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{
+              width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block',
+              backgroundColor: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af',
+            }} />
+            <span style={{ fontSize: '11px', color: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af' }}>
+              {state.serverHealthy === true ? '正常' : state.serverHealthy === false ? '不可用' : '检测中'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Platform Toggles */}
+      <div style={{ marginBottom: '10px' }}>
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>启用平台</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+          {Object.values(Platform).map((platform) => {
+            const enabled = state.config?.enabledPlatforms.includes(platform) ?? true
+            return (
+              <button
+                key={platform}
+                onClick={() => togglePlatform(platform)}
+                style={{
+                  padding: '6px 8px', fontSize: '12px', border: '1px solid',
+                  borderColor: enabled ? '#bfdbfe' : '#e2e8f0',
+                  borderRadius: '4px', cursor: 'pointer',
+                  backgroundColor: enabled ? '#eff6ff' : '#f8fafc',
+                  color: enabled ? '#1d4ed8' : '#94a3b8',
+                  fontWeight: enabled ? 500 : 400,
+                }}
+              >
+                {platformLabels[platform]}
+              </button>
+            )
+          })}
         </div>
       </div>
 
       {/* Stats */}
       {state.stats && (
-        <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '13px', color: '#374151', marginBottom: '8px' }}>收集统计</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <StatCard label="总对话数" value={state.stats.totalConversations} />
-            <StatCard label="待同步" value={state.stats.pendingSync} />
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+          <div style={{ flex: 1, padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '4px', textAlign: 'center' }}>
+            <div style={{ fontSize: '16px', fontWeight: 600, color: '#16a34a' }}>{state.stats.totalConversations}</div>
+            <div style={{ fontSize: '10px', color: '#6b7280' }}>已收集</div>
           </div>
-          {Object.keys(state.stats.byPlatform).length > 0 && (
-            <div style={{ marginTop: '8px' }}>
-              {Object.entries(state.stats.byPlatform).map(([platform, count]) => (
-                <div
-                  key={platform}
-                  style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '2px 0' }}
-                >
-                  <span style={{ color: '#6b7280' }}>{platform}</span>
-                  <span style={{ fontWeight: 500 }}>{count}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <div style={{ flex: 1, padding: '8px', backgroundColor: '#fef3c7', borderRadius: '4px', textAlign: 'center' }}>
+            <div style={{ fontSize: '16px', fontWeight: 600, color: '#d97706' }}>{state.stats.pendingSync}</div>
+            <div style={{ fontSize: '10px', color: '#6b7280' }}>待同步</div>
+          </div>
         </div>
       )}
 
-      {/* Settings link */}
-      <button
-        onClick={openOptions}
-        style={{
-          width: '100%',
-          padding: '8px',
-          fontSize: '13px',
-          border: '1px solid #e5e7eb',
-          borderRadius: '6px',
-          backgroundColor: 'white',
-          cursor: 'pointer',
-          color: '#374151',
-        }}
-      >
-        ⚙️ 设置
+      {/* Settings */}
+      <button onClick={openOptions} style={{
+        width: '100%', padding: '8px', fontSize: '12px', border: '1px solid #e2e8f0',
+        borderRadius: '6px', backgroundColor: 'white', cursor: 'pointer', color: '#374151',
+      }}>
+        ⚙️ 服务管理与高级设置
       </button>
-    </div>
-  )
-}
-
-function StatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div style={{ padding: '8px', backgroundColor: '#f9fafb', borderRadius: '4px', textAlign: 'center' }}>
-      <div style={{ fontSize: '18px', fontWeight: 600 }}>{value}</div>
-      <div style={{ fontSize: '11px', color: '#6b7280' }}>{label}</div>
     </div>
   )
 }

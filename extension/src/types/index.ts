@@ -18,7 +18,7 @@ export interface UnifiedMessage {
   id: string
   role: MessageRole
   content: string
-  timestamp: string // ISO 8601
+  timestamp: string
   isComplete: boolean
 }
 
@@ -33,11 +33,19 @@ export interface UnifiedConversation {
   syncStatus: SyncStatus
 }
 
+export interface ServerConfig {
+  url: string
+  token: string
+  name: string
+  isDefault: boolean
+  healthy?: boolean
+}
+
 export interface ExtensionConfig {
-  serverUrl: string
-  authToken: string
+  servers: ServerConfig[]
+  activeServerIndex: number
   syncMode: 'realtime' | 'batch'
-  batchInterval: number // minutes
+  batchInterval: number
   enabledPlatforms: Platform[]
   isCollecting: boolean
 }
@@ -49,3 +57,22 @@ export interface PlatformStats {
 }
 
 export type ExtensionStatus = 'active' | 'paused' | 'error'
+
+export const DEFAULT_CONFIG: ExtensionConfig = {
+  servers: [
+    { url: 'http://localhost:9531', token: '', name: '本地服务', isDefault: true },
+  ],
+  activeServerIndex: 0,
+  syncMode: 'realtime',
+  batchInterval: 5,
+  enabledPlatforms: [Platform.ChatGPT, Platform.Gemini, Platform.Tongyi, Platform.Doubao],
+  isCollecting: true,
+}
+
+// URL patterns for each platform to detect if current tab is an AI chat page
+export const PLATFORM_URL_PATTERNS: Record<Platform, string[]> = {
+  [Platform.ChatGPT]: ['chat.openai.com', 'chatgpt.com'],
+  [Platform.Gemini]: ['gemini.google.com'],
+  [Platform.Tongyi]: ['tongyi.aliyun.com', 'qianwen.aliyun.com'],
+  [Platform.Doubao]: ['doubao.com'],
+}

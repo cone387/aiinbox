@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "description": "统一收集 AI 平台对话记录",
   "permissions": [
-    "webRequest",
     "storage",
     "notifications",
-    "tabs"
+    "tabs",
+    "activeTab"
   ],
   "host_permissions": [
     "https://chat.openai.com/*",
@@ -16,12 +16,29 @@
     "https://tongyi.aliyun.com/*",
     "https://qianwen.aliyun.com/*",
     "https://www.doubao.com/*",
-    "https://doubao.com/*"
+    "https://doubao.com/*",
+    "http://localhost:9531/*"
   ],
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://gemini.google.com/*",
+        "https://tongyi.aliyun.com/*",
+        "https://qianwen.aliyun.com/*",
+        "https://www.doubao.com/*",
+        "https://doubao.com/*"
+      ],
+      "js": ["src/content/intercept.ts"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
   "action": {
     "default_popup": "src/popup/index.html",
     "default_icon": {
