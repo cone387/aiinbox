@@ -4,6 +4,7 @@ import {
   MessageOutlined,
   SearchOutlined,
   BarChartOutlined,
+  KeyOutlined,
   SettingOutlined,
   LogoutOutlined,
 } from '@ant-design/icons'
@@ -17,11 +18,12 @@ export default function Layout() {
   const logout = useAuthStore((s) => s.logout)
 
   const menuItems = [
-    { key: '/', icon: <MessageOutlined />, label: '对话' },
-    { key: '/search', icon: <SearchOutlined />, label: '搜索' },
-    { key: '/stats', icon: <BarChartOutlined />, label: '统计' },
-    { key: '/settings', icon: <SettingOutlined />, label: '设置' },
-    { key: 'logout', icon: <LogoutOutlined />, label: '退出', danger: true },
+    { key: '/', icon: <MessageOutlined />, label: '\u5BF9\u8BDD' },
+    { key: '/search', icon: <SearchOutlined />, label: '\u641C\u7D22' },
+    { key: '/stats', icon: <BarChartOutlined />, label: '\u7EDF\u8BA1' },
+    { key: '/tokens', icon: <KeyOutlined />, label: 'API Tokens' },
+    { key: '/settings', icon: <SettingOutlined />, label: '\u8BBE\u7F6E' },
+    { key: 'logout', icon: <LogoutOutlined />, label: '\u9000\u51FA', danger: true },
   ]
 
   const handleMenuClick = ({ key }: { key: string }) => {

@@ -80,23 +80,53 @@ func (s *AuthService) Login(username, password string) (*TokenPair, error) {
 }
 
 // GenerateAPIToken creates a long-lived API token for the user.
-func (s *AuthService) GenerateAPIToken(userID uint) (string, time.Time, error) {
+func (s *AuthService) GenerateAPIToken(userID uint, name string) (*models.APIToken, error) {
 	token, err := generateRandomToken(32)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to generate token: %w", err)
+		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	apiToken := "aic_" + token
-	expires := time.Now().Add(time.Duration(s.Cfg.APITokenExpireDays) * 24 * time.Hour)
-
-	if err := s.DB.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"api_token":         apiToken,
-		"api_token_expires": expires,
-	}).Error; err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to save token: %w", err)
+	apiToken := &models.APIToken{
+		UserID:    userID,
+		Name:      name,
+		Token:     "aic_" + token,
+		ExpiresAt: time.Now().Add(time.Duration(s.Cfg.APITokenExpireDays) * 24 * time.Hour),
 	}
 
-	return apiToken, expires, nil
+	if err := s.DB.Create(apiToken).Error; err != nil {
+		return nil, fmt.Errorf("failed to save token: %w", err)
+	}
+
+	return apiToken, nil
+}
+
+// ListAPITokens returns all API tokens for a user.
+func (s *AuthService) ListAPITokens(userID uint) ([]models.APIToken, error) {
+	var tokens []models.APIToken
+	err := s.DB.Where("user_id = ?", userID).Order("created_at DESC").Find(&tokens).Error
+	return tokens, err
+}
+
+// DeleteAPIToken deletes a specific API token.
+func (s *AuthService) DeleteAPIToken(userID uint, tokenID uint) error {
+	result := s.DB.Where("id = ? AND user_id = ?", tokenID, userID).Delete(&models.APIToken{})
+	if result.RowsAffected == 0 {
+		return errors.New("token not found")
+	}
+	return result.Error
+}
+
+// ValidateAPIToken checks if an API token is valid and updates last_used.
+func (s *AuthService) ValidateAPIToken(token string) (*models.APIToken, error) {
+	var apiToken models.APIToken
+	err := s.DB.Where("token = ? AND expires_at > ?", token, time.Now()).First(&apiToken).Error
+	if err != nil {
+		return nil, err
+	}
+	// Update last_used
+	now := time.Now()
+	s.DB.Model(&apiToken).Update("last_used", &now)
+	return &apiToken, nil
 }
 
 // RefreshToken generates a new token pair from a valid refresh token.

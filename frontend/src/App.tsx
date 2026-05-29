@@ -8,6 +8,7 @@ import ConversationList from './pages/ConversationList'
 import ConversationDetail from './pages/ConversationDetail'
 import Search from './pages/Search'
 import Stats from './pages/Stats'
+import Tokens from './pages/Tokens'
 import Settings from './pages/Settings'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -34,6 +35,7 @@ function App() {
             <Route path="conversations/:id" element={<ConversationDetail />} />
             <Route path="search" element={<Search />} />
             <Route path="stats" element={<Stats />} />
+            <Route path="tokens" element={<Tokens />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

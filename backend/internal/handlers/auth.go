@@ -92,7 +92,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 func (h *AuthHandler) GenerateAPIToken(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
-	token, expires, err := h.AuthService.GenerateAPIToken(userID)
+	var req struct {
+		Name string `json:"name" binding:"required,min=1,max=128"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Default name if not provided
+		req.Name = "Default"
+	}
+
+	token, err := h.AuthService.GenerateAPIToken(userID, req.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal_error",
@@ -101,10 +109,73 @@ func (h *AuthHandler) GenerateAPIToken(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"api_token":  token,
-		"expires_at": expires,
-	})
+	c.JSON(http.StatusOK, token)
+}
+
+// ListAPITokens returns all tokens for the user.
+func (h *AuthHandler) ListAPITokens(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	tokens, err := h.AuthService.ListAPITokens(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal_error",
+			"message": "failed to list tokens",
+		})
+		return
+	}
+
+	// Mask token values for security (show first 8 chars + last 4)
+	type TokenView struct {
+		ID        uint   `json:"id"`
+		Name      string `json:"name"`
+		Token     string `json:"token"`
+		ExpiresAt string `json:"expires_at"`
+		LastUsed  string `json:"last_used,omitempty"`
+		CreatedAt string `json:"created_at"`
+	}
+
+	views := make([]TokenView, 0, len(tokens))
+	for _, t := range tokens {
+		masked := t.Token
+		if len(masked) > 12 {
+			masked = masked[:8] + "..." + masked[len(masked)-4:]
+		}
+		lastUsed := ""
+		if t.LastUsed != nil {
+			lastUsed = t.LastUsed.Format("2006-01-02 15:04:05")
+		}
+		views = append(views, TokenView{
+			ID:        t.ID,
+			Name:      t.Name,
+			Token:     masked,
+			ExpiresAt: t.ExpiresAt.Format("2006-01-02 15:04:05"),
+			LastUsed:  lastUsed,
+			CreatedAt: t.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"tokens": views})
+}
+
+// DeleteAPIToken deletes a specific token.
+func (h *AuthHandler) DeleteAPIToken(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var req struct {
+		ID uint `json:"id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation_error", "message": err.Error()})
+		return
+	}
+
+	if err := h.AuthService.DeleteAPIToken(userID, req.ID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "token not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // RefreshToken generates new tokens from a refresh token.

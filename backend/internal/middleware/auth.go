@@ -93,9 +93,17 @@ func (m *AuthMiddleware) validateJWT(tokenStr string) (*UserClaims, error) {
 }
 
 func (m *AuthMiddleware) validateAPIToken(token string) (*models.User, error) {
-	var user models.User
-	err := m.DB.Where("api_token = ? AND api_token_expires > ?", token, time.Now()).First(&user).Error
+	var apiToken models.APIToken
+	err := m.DB.Where("token = ? AND expires_at > ?", token, time.Now()).First(&apiToken).Error
 	if err != nil {
+		return nil, err
+	}
+	// Update last_used
+	now := time.Now()
+	m.DB.Model(&apiToken).Update("last_used", &now)
+
+	var user models.User
+	if err := m.DB.First(&user, apiToken.UserID).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil

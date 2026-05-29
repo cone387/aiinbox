@@ -107,6 +107,8 @@ func main() {
 	}
 	{
 		protected.POST("/auth/token", authHandler.GenerateAPIToken)
+		protected.GET("/auth/tokens", authHandler.ListAPITokens)
+		protected.DELETE("/auth/token", authHandler.DeleteAPIToken)
 
 		// Sync routes
 		protected.POST("/conversations/sync", syncHandler.SyncConversation)
