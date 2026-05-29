@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS, DEFAULT_CONFIG } from '../types'
 
 interface StorageStats {
@@ -11,10 +11,10 @@ interface PopupState {
   status: ExtensionStatus
   isCollecting: boolean
   activePlatform: Platform | null
-  config: ExtensionConfig | null
+  config: ExtensionConfig
   stats: StorageStats | null
-  serverHealthy: boolean | null
-  authHealthy: boolean | null
+  serverOk: boolean | null
+  authOk: boolean | null
   loading: boolean
 }
 
@@ -30,15 +30,27 @@ function App() {
     status: 'paused',
     isCollecting: false,
     activePlatform: null,
-    config: null,
+    config: DEFAULT_CONFIG,
     stats: null,
-    serverHealthy: null,
-    authHealthy: null,
+    serverOk: null,
+    authOk: null,
     loading: true,
   })
 
+  const doHealthCheck = useCallback(async (cfg?: ExtensionConfig) => {
+    const c = cfg || state.config
+    const server = c.servers?.[c.activeServerIndex || 0]
+    if (!server?.url) return
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url })
+      setState((s) => ({ ...s, serverOk: resp?.server ?? false, authOk: resp?.auth ?? false }))
+    } catch {}
+  }, [state.config])
+
   useEffect(() => {
     loadData()
+    const interval = setInterval(() => doHealthCheck(), 30000)
+    return () => clearInterval(interval)
   }, [])
 
   async function loadData() {
@@ -46,24 +58,18 @@ function App() {
       const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' })
       if (!response) { setState((s) => ({ ...s, loading: false })); return }
 
-      setState({
+      const cfg = response.config || DEFAULT_CONFIG
+      setState((s) => ({
+        ...s,
         status: response.status || 'paused',
         isCollecting: response.isCollecting || false,
         activePlatform: response.activePlatform || null,
-        config: response.config || DEFAULT_CONFIG,
+        config: cfg,
         stats: response.stats || null,
-        serverHealthy: null,
         loading: false,
-      })
+      }))
 
-      const cfg = response.config || DEFAULT_CONFIG
-      if (cfg.servers?.length) {
-        const server = cfg.servers[cfg.activeServerIndex || 0]
-        if (server?.url) {
-          const healthResp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url })
-          setState((s) => ({ ...s, serverHealthy: healthResp?.server ?? false, authHealthy: healthResp?.auth ?? false }))
-        }
-      }
+      doHealthCheck(cfg)
     } catch {
       setState((s) => ({ ...s, loading: false }))
     }
@@ -80,34 +86,25 @@ function App() {
 
   async function togglePlatform(platform: Platform) {
     const response = await chrome.runtime.sendMessage({ type: 'TOGGLE_PLATFORM', platform })
-    if (response?.enabledPlatforms && state.config) {
-      setState((s) => ({
-        ...s,
-        config: { ...s.config!, enabledPlatforms: response.enabledPlatforms },
-      }))
+    if (response?.enabledPlatforms) {
+      setState((s) => ({ ...s, config: { ...s.config, enabledPlatforms: response.enabledPlatforms } }))
     }
-  }
-
-  function openOptions() {
-    chrome.runtime.openOptionsPage()
   }
 
   if (state.loading) {
     return <div style={{ padding: '16px', textAlign: 'center', width: '340px' }}>{'\u52A0\u8F7D\u4E2D...'}</div>
   }
 
-  const activeServer = state.config?.servers?.[state.config?.activeServerIndex || 0]
-  const enabledPlatforms = state.config?.enabledPlatforms || DEFAULT_CONFIG.enabledPlatforms
+  const activeServer = state.config.servers?.[state.config.activeServerIndex || 0]
+  const enabledPlatforms = state.config.enabledPlatforms || []
 
   return (
     <div style={{ width: '340px', padding: '12px', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '13px' }}>
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '15px', fontWeight: 600 }}>AI Inbox</span>
-          <span style={{
-            display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
-            backgroundColor: state.isCollecting ? '#22c55e' : '#9ca3af',
-          }} />
+          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: state.isCollecting ? '#22c55e' : '#9ca3af' }} />
         </div>
         <button onClick={toggleCollecting} style={{
           padding: '4px 10px', fontSize: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer',
@@ -118,62 +115,56 @@ function App() {
         </button>
       </div>
 
+      {/* Current page */}
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
         <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>{'\u5F53\u524D\u9875\u9762'}</div>
         {state.activePlatform ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', display: 'inline-block' }} />
             <span style={{ fontWeight: 500 }}>{platformLabels[state.activePlatform]}</span>
-            <span style={{ color: '#22c55e', fontSize: '11px' }}>{'\uFF08\u6B63\u5728\u76D1\u542C\uFF09'}</span>
+            <span style={{ color: '#22c55e', fontSize: '11px' }}>{'\uFF08\u76D1\u542C\u4E2D\uFF09'}</span>
           </div>
         ) : (
           <span style={{ color: '#94a3b8' }}>{'\u975E AI \u804A\u5929\u9875\u9762'}</span>
         )}
       </div>
 
+      {/* Server status */}
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>{'\u670D\u52A1'}</div>
-            <div style={{ fontWeight: 500 }}>{activeServer?.name || '\u672A\u914D\u7F6E'}</div>
+            <div style={{ fontWeight: 500, fontSize: '12px' }}>{activeServer?.name || '\u672A\u914D\u7F6E'}</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <span style={{
-                width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block',
-                backgroundColor: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af',
-              }} />
-              <span style={{ fontSize: '10px', color: '#6b7280' }}>{'\u670D\u52A1'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block', backgroundColor: state.serverOk === true ? '#22c55e' : state.serverOk === false ? '#ef4444' : '#d1d5db' }} />
+              <div style={{ fontSize: '9px', color: '#6b7280' }}>{'\u670D\u52A1'}</div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <span style={{
-                width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block',
-                backgroundColor: state.authHealthy === true ? '#22c55e' : state.authHealthy === false ? '#ef4444' : '#9ca3af',
-              }} />
-              <span style={{ fontSize: '10px', color: '#6b7280' }}>Token</span>
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block', backgroundColor: state.authOk === true ? '#22c55e' : state.authOk === false ? '#ef4444' : '#d1d5db' }} />
+              <div style={{ fontSize: '9px', color: '#6b7280' }}>Token</div>
             </div>
+            <button onClick={() => doHealthCheck()} style={{ padding: '2px 6px', fontSize: '10px', border: '1px solid #d1d5db', borderRadius: '3px', cursor: 'pointer', backgroundColor: 'white' }}>
+              {'\u5237\u65B0'}
+            </button>
           </div>
         </div>
       </div>
 
+      {/* Platform toggles */}
       <div style={{ marginBottom: '10px' }}>
         <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>{'\u542F\u7528\u5E73\u53F0'}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
           {PLATFORMS.map((platform) => {
             const enabled = enabledPlatforms.includes(platform)
             return (
-              <button
-                key={platform}
-                onClick={() => togglePlatform(platform)}
-                style={{
-                  padding: '6px 8px', fontSize: '12px', border: '1px solid',
-                  borderColor: enabled ? '#bfdbfe' : '#e2e8f0',
-                  borderRadius: '4px', cursor: 'pointer',
-                  backgroundColor: enabled ? '#eff6ff' : '#f8fafc',
-                  color: enabled ? '#1d4ed8' : '#94a3b8',
-                  fontWeight: enabled ? 500 : 400,
-                }}
-              >
+              <button key={platform} onClick={() => togglePlatform(platform)} style={{
+                padding: '6px 8px', fontSize: '12px', border: '1px solid',
+                borderColor: enabled ? '#bfdbfe' : '#e2e8f0', borderRadius: '4px', cursor: 'pointer',
+                backgroundColor: enabled ? '#eff6ff' : '#f8fafc',
+                color: enabled ? '#1d4ed8' : '#94a3b8', fontWeight: enabled ? 500 : 400,
+              }}>
                 {platformLabels[platform]}
               </button>
             )
@@ -181,6 +172,7 @@ function App() {
         </div>
       </div>
 
+      {/* Stats */}
       {state.stats && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
           <div style={{ flex: 1, padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '4px', textAlign: 'center' }}>
@@ -194,11 +186,12 @@ function App() {
         </div>
       )}
 
-      <button onClick={openOptions} style={{
+      {/* Settings */}
+      <button onClick={() => chrome.runtime.openOptionsPage()} style={{
         width: '100%', padding: '8px', fontSize: '12px', border: '1px solid #e2e8f0',
         borderRadius: '6px', backgroundColor: 'white', cursor: 'pointer', color: '#374151',
       }}>
-        {'\u2699\uFE0F \u670D\u52A1\u7BA1\u7406\u4E0E\u9AD8\u7EA7\u8BBE\u7F6E'}
+        {'\u2699\uFE0F \u670D\u52A1\u7BA1\u7406\u4E0E\u8BBE\u7F6E'}
       </button>
     </div>
   )
