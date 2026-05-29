@@ -40,7 +40,26 @@ async function loadConfig(): Promise<void> {
   try {
     const stored = await chrome.storage.local.get('config')
     if (stored.config) {
-      config = stored.config as ExtensionConfig
+      const cfg = stored.config as any
+      // Migrate old config format
+      if (!cfg.servers) {
+        config = {
+          ...DEFAULT_CONFIG,
+          servers: [{
+            url: cfg.serverUrl || 'http://localhost:9531',
+            token: cfg.authToken || '',
+            name: 'Local',
+            isDefault: true,
+          }],
+          enabledPlatforms: cfg.enabledPlatforms || DEFAULT_CONFIG.enabledPlatforms,
+          syncMode: cfg.syncMode || 'realtime',
+          batchInterval: cfg.batchInterval || 5,
+          isCollecting: cfg.isCollecting ?? true,
+        }
+        await chrome.storage.local.set({ config })
+      } else {
+        config = cfg as ExtensionConfig
+      }
     } else {
       await chrome.storage.local.set({ config: DEFAULT_CONFIG })
       config = { ...DEFAULT_CONFIG }
