@@ -76,7 +76,7 @@ func Load(configPath string) (*Config, error) {
 
 	// Defaults
 	v.SetDefault("server.host", "127.0.0.1")
-	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.port", 9531)
 	v.SetDefault("server.mode", "release")
 	v.SetDefault("database.driver", "sqlite")
 	v.SetDefault("database.dsn", "./data/aiinbox.db")
@@ -95,7 +95,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("rate_limit.auth_block_minutes", 15)
 	v.SetDefault("rate_limit.search_per_minute", 30)
 	v.SetDefault("rate_limit.api_per_minute", 120)
-	v.SetDefault("cors.allowed_origins", []string{"http://localhost:3000", "chrome-extension://*"})
+	v.SetDefault("cors.allowed_origins", []string{"http://localhost:9631", "chrome-extension://*"})
 	v.SetDefault("cors.allowed_methods", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")

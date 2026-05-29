@@ -6,13 +6,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "${PORT:-8080}:8080"
+      - "${PORT:-9531}:9531"
     environment:
       - AIINBOX_SERVER_HOST=0.0.0.0
       - AIINBOX_DATABASE_DRIVER=postgres
       - AIINBOX_DATABASE_DSN=host=db user=${DB_USER:-aiinbox} password=${DB_PASSWORD} dbname=${DB_NAME:-aiinbox} port=5432 sslmode=disable
       - AIINBOX_AUTH_JWT_SECRET=${JWT_SECRET}
-      - AIINBOX_CORS_ALLOWED_ORIGINS=${FRONTEND_URL:-http://localhost:3000},chrome-extension://*
+      - AIINBOX_CORS_ALLOWED_ORIGINS=${FRONTEND_URL:-http://localhost:9631},chrome-extension://*
     volumes:
       - export_data:/app/data/exports
     depends_on:
