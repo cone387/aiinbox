@@ -133,13 +133,12 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
   try {
     switch (message.type) {
       case 'RESPONSE_COMPLETE': {
-        if (!isCollecting) { sendResponse({ ok: false }); return }
-
+        // Always save locally, even if sync is not configured
         const platform = message.platform as Platform
         if (!config.enabledPlatforms?.includes(platform)) { sendResponse({ ok: false }); return }
 
         const adapter = getAdapterByPlatform(platform)
-        if (!adapter) { sendResponse({ ok: false }); return }
+        if (!adapter) { sendResponse({ ok: false, error: 'no adapter for ' + platform }); return }
 
         const result = adapter.parseResponse({
           requestId: message.requestId || '',
@@ -156,11 +155,15 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
 
         if (result.success && result.conversation) {
           await coll.save(result.conversation)
-          syncService.triggerSync()
+          if (isCollecting) {
+            syncService.triggerSync()
+          }
           console.log(`[AI Inbox] Saved conversation from ${platform} (${result.conversation.messages.length} messages)`)
-        } else if (message.body?.length > 0) {
+        } else if (message.body?.length > 100) {
           await coll.saveRaw(platform, message.body.slice(0, 1_000_000))
           console.warn(`[AI Inbox] Parse failed for ${platform}: ${result.error}`)
+        } else {
+          console.log(`[AI Inbox] Skipped ${platform} response: ${result.error}`)
         }
 
         sendResponse({ ok: true })

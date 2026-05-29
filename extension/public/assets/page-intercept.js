@@ -1,23 +1,34 @@
-// Page-level script injected into AI platform pages.
-// Intercepts fetch to capture streaming responses.
-// Communicates with content script via window.postMessage.
-
 (function () {
   'use strict'
 
-  const INTERCEPT_PATTERNS = [
-    '/backend-api/conversation',
-    '/_/BardChatUi/data/',
-    '/app/_/data/',
-    '/dialog/conversation',
-    '/qianwen/api/chat',
-    '/api/chat/completions',
-    '/chat/api/chat',
-    '/samantha/chat/completion',
+  // Only intercept POST requests to actual chat completion endpoints
+  var INTERCEPT_RULES = [
+    // ChatGPT: only POST to /backend-api/conversation (not /conversations, /stream_status, etc)
+    { pattern: '/backend-api/conversation', method: 'POST', exclude: ['/conversations', '/stream_status', '/textdocs', '/init'] },
+    // Gemini
+    { pattern: '/_/BardChatUi/data/', method: 'POST', exclude: [] },
+    { pattern: '/app/_/data/', method: 'POST', exclude: [] },
+    // Tongyi
+    { pattern: '/dialog/conversation', method: 'POST', exclude: [] },
+    { pattern: '/qianwen/api/chat', method: 'POST', exclude: [] },
+    // Doubao
+    { pattern: '/chat/api/chat', method: 'POST', exclude: [] },
+    { pattern: '/samantha/chat/completion', method: 'POST', exclude: [] },
   ]
 
-  function shouldIntercept(url) {
-    return INTERCEPT_PATTERNS.some(function (p) { return url.includes(p) })
+  function shouldIntercept(url, method) {
+    for (var i = 0; i < INTERCEPT_RULES.length; i++) {
+      var rule = INTERCEPT_RULES[i]
+      if (url.includes(rule.pattern)) {
+        if (rule.method && rule.method !== method) continue
+        var excluded = false
+        for (var j = 0; j < rule.exclude.length; j++) {
+          if (url.includes(rule.exclude[j])) { excluded = true; break }
+        }
+        if (!excluded) return true
+      }
+    }
+    return false
   }
 
   function detectPlatform() {
@@ -33,22 +44,21 @@
     window.postMessage({ source: 'aiinbox-page', type: 'RESPONSE_COMPLETE', payload: payload }, '*')
   }
 
-  // Monkey-patch fetch
   var originalFetch = window.fetch
   window.fetch = function () {
     var args = arguments
     var input = args[0]
     var init = args[1]
     var url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input && input.url ? input.url : ''))
+    var method = (init && init.method) ? init.method.toUpperCase() : 'GET'
 
-    if (!shouldIntercept(url)) {
+    if (!shouldIntercept(url, method)) {
       return originalFetch.apply(this, args)
     }
 
     var platform = detectPlatform()
     var requestId = Date.now() + '_' + Math.random().toString(36).slice(2, 8)
 
-    // Capture request body
     var requestBody = ''
     if (init && init.body) {
       if (typeof init.body === 'string') {
@@ -56,14 +66,11 @@
       }
     }
 
-    console.log('[AI Inbox] Intercepting ' + platform + ' fetch: ' + url)
+    console.log('[AI Inbox] Intercepting ' + platform + ' POST: ' + url.split('?')[0])
 
     return originalFetch.apply(this, args).then(function (response) {
       var cloned = response.clone()
-
-      // Process in background
       processResponse(cloned, platform, requestId, url, requestBody)
-
       return response
     })
   }
@@ -72,7 +79,6 @@
     var contentType = response.headers.get('content-type') || ''
 
     if (contentType.includes('text/event-stream') || contentType.includes('stream')) {
-      // SSE streaming
       var reader = response.body && response.body.getReader()
       if (!reader) return
 
@@ -82,6 +88,7 @@
       function readChunk() {
         reader.read().then(function (result) {
           if (result.done) {
+            console.log('[AI Inbox] Stream complete (' + fullBody.length + ' bytes)')
             sendToExtension({
               requestId: requestId,
               platform: platform,
@@ -90,14 +97,13 @@
               requestBody: requestBody,
               isComplete: true,
             })
-            console.log('[AI Inbox] Captured ' + platform + ' stream (' + fullBody.length + ' bytes)')
             return
           }
           fullBody += decoder.decode(result.value, { stream: true })
           readChunk()
         }).catch(function (err) {
-          // Stream error, send what we have
           if (fullBody.length > 0) {
+            console.log('[AI Inbox] Stream interrupted, sending partial (' + fullBody.length + ' bytes)')
             sendToExtension({
               requestId: requestId,
               platform: platform,
@@ -107,52 +113,57 @@
               isComplete: false,
             })
           }
-          console.warn('[AI Inbox] Stream read error:', err)
         })
       }
       readChunk()
     } else {
-      // Regular response
       response.text().then(function (text) {
-        sendToExtension({
-          requestId: requestId,
-          platform: platform,
-          url: url,
-          body: text,
-          requestBody: requestBody,
-          isComplete: true,
-        })
-        console.log('[AI Inbox] Captured ' + platform + ' response (' + text.length + ' bytes)')
+        // Only send if it looks like conversation data (has reasonable size)
+        if (text.length > 50) {
+          console.log('[AI Inbox] Response captured (' + text.length + ' bytes)')
+          sendToExtension({
+            requestId: requestId,
+            platform: platform,
+            url: url,
+            body: text,
+            requestBody: requestBody,
+            isComplete: true,
+          })
+        }
       }).catch(function () {})
     }
   }
 
-  // Also patch XMLHttpRequest
+  // Patch XHR too
   var originalOpen = XMLHttpRequest.prototype.open
   var originalSend = XMLHttpRequest.prototype.send
 
   XMLHttpRequest.prototype.open = function (method, url) {
     this._aiinbox_url = url ? url.toString() : ''
+    this._aiinbox_method = method ? method.toUpperCase() : 'GET'
     return originalOpen.apply(this, arguments)
   }
 
   XMLHttpRequest.prototype.send = function (body) {
     var url = this._aiinbox_url || ''
-    if (shouldIntercept(url)) {
+    var method = this._aiinbox_method || 'GET'
+    if (shouldIntercept(url, method)) {
       var platform = detectPlatform()
       var requestId = 'xhr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
       var reqBody = typeof body === 'string' ? body : ''
 
       this.addEventListener('load', function () {
-        sendToExtension({
-          requestId: requestId,
-          platform: platform,
-          url: url,
-          body: this.responseText || '',
-          requestBody: reqBody,
-          isComplete: true,
-        })
-        console.log('[AI Inbox] XHR captured ' + platform + ' (' + (this.responseText || '').length + ' bytes)')
+        var text = this.responseText || ''
+        if (text.length > 50) {
+          sendToExtension({
+            requestId: requestId,
+            platform: platform,
+            url: url,
+            body: text,
+            requestBody: reqBody,
+            isComplete: true,
+          })
+        }
       })
     }
     return originalSend.apply(this, arguments)
