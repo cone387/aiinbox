@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Platform, ExtensionConfig, ServerConfig, DEFAULT_CONFIG } from '../types'
+import { Platform, ExtensionConfig, ServerConfig, DEFAULT_CONFIG, PLATFORMS } from '../types'
 
 function App() {
   const [config, setConfig] = useState<ExtensionConfig>(DEFAULT_CONFIG)
@@ -22,10 +22,10 @@ function App() {
     setSaving(true)
     try {
       await chrome.runtime.sendMessage({ type: 'SAVE_CONFIG', config })
-      setMessage('配置已保存')
+      setMessage('Config saved')
       setTimeout(() => setMessage(''), 3000)
     } catch (err) {
-      setMessage('保存失败: ' + err)
+      setMessage('Save failed: ' + err)
     }
     setSaving(false)
   }
@@ -41,7 +41,7 @@ function App() {
   function addServer() {
     setConfig((c) => ({
       ...c,
-      servers: [...c.servers, { url: '', token: '', name: `服务 ${c.servers.length + 1}`, isDefault: false }],
+      servers: [...c.servers, { url: '', token: '', name: 'Server ' + (c.servers.length + 1), isDefault: false }],
     }))
   }
 
@@ -64,7 +64,7 @@ function App() {
 
   return (
     <div style={{ maxWidth: '700px', margin: '0 auto', padding: '24px', fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ fontSize: '20px', marginBottom: '24px' }}>AI Inbox 设置</h1>
+      <h1 style={{ fontSize: '20px', marginBottom: '24px' }}>AI Inbox Settings</h1>
 
       {message && (
         <div style={{ padding: '8px 12px', marginBottom: '16px', backgroundColor: '#dcfce7', borderRadius: '6px', color: '#16a34a', fontSize: '13px' }}>
@@ -72,12 +72,11 @@ function App() {
         </div>
       )}
 
-      {/* Servers */}
       <section style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <h2 style={{ fontSize: '16px', margin: 0 }}>服务地址管理</h2>
+          <h2 style={{ fontSize: '16px', margin: 0 }}>Servers</h2>
           <button onClick={addServer} style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white' }}>
-            + 添加服务
+            + Add
           </button>
         </div>
 
@@ -97,7 +96,6 @@ function App() {
                   onChange={(e) => updateServer(index, 'name', e.target.value)}
                   style={{ border: 'none', fontWeight: 500, fontSize: '14px', backgroundColor: 'transparent' }}
                 />
-                {/* Health indicator */}
                 <span style={{
                   width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block',
                   backgroundColor: healthStatus[index] === true ? '#22c55e' : healthStatus[index] === false ? '#ef4444' : '#d1d5db',
@@ -105,11 +103,11 @@ function App() {
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <button onClick={() => checkHealth(index)} style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid #d1d5db', borderRadius: '3px', cursor: 'pointer', backgroundColor: 'white' }}>
-                  检测
+                  Test
                 </button>
                 {config.servers.length > 1 && (
                   <button onClick={() => removeServer(index)} style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid #fecaca', borderRadius: '3px', cursor: 'pointer', backgroundColor: '#fef2f2', color: '#dc2626' }}>
-                    删除
+                    Remove
                   </button>
                 )}
               </div>
@@ -134,22 +132,21 @@ function App() {
         ))}
       </section>
 
-      {/* Sync Settings */}
       <section style={{ marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '16px', marginBottom: '12px' }}>同步设置</h2>
+        <h2 style={{ fontSize: '16px', marginBottom: '12px' }}>Sync</h2>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <label style={{ fontSize: '13px' }}>同步模式：</label>
+          <label style={{ fontSize: '13px' }}>Mode:</label>
           <select
             value={config.syncMode}
             onChange={(e) => setConfig((c) => ({ ...c, syncMode: e.target.value as 'realtime' | 'batch' }))}
             style={{ padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
           >
-            <option value="realtime">实时同步</option>
-            <option value="batch">定时批量</option>
+            <option value="realtime">Realtime</option>
+            <option value="batch">Batch</option>
           </select>
           {config.syncMode === 'batch' && (
             <>
-              <label style={{ fontSize: '13px' }}>间隔：</label>
+              <label style={{ fontSize: '13px' }}>Interval:</label>
               <input
                 type="number"
                 min={5}
@@ -158,18 +155,17 @@ function App() {
                 onChange={(e) => setConfig((c) => ({ ...c, batchInterval: parseInt(e.target.value) || 5 }))}
                 style={{ width: '60px', padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
               />
-              <span style={{ fontSize: '13px', color: '#6b7280' }}>分钟</span>
+              <span style={{ fontSize: '13px', color: '#6b7280' }}>min</span>
             </>
           )}
         </div>
       </section>
 
-      {/* Save */}
       <button onClick={saveConfig} disabled={saving} style={{
         padding: '10px 24px', fontSize: '14px', fontWeight: 500, border: 'none', borderRadius: '6px',
         backgroundColor: '#2563eb', color: 'white', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
       }}>
-        {saving ? '保存中...' : '保存配置'}
+        {saving ? 'Saving...' : 'Save'}
       </button>
     </div>
   )

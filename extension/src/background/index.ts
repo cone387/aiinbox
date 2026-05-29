@@ -243,5 +243,5 @@ function updateIcon(status: 'active' | 'paused' | 'error'): void {
     error: '#ef4444',
   }
   chrome.action.setBadgeBackgroundColor({ color: colors[status] })
-  chrome.action.setBadgeText({ text: status === 'active' ? '' : status === 'paused' ? '⏸' : '!' })
+  chrome.action.setBadgeText({ text: status === 'active' ? '' : status === 'paused' ? 'P' : '!' })
 }

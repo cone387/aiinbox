@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Platform, ExtensionConfig, ExtensionStatus } from '../types'
+import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS } from '../types'
 
 interface StorageStats {
   totalConversations: number
@@ -18,10 +18,10 @@ interface PopupState {
 }
 
 const platformLabels: Record<Platform, string> = {
-  [Platform.ChatGPT]: 'ChatGPT',
-  [Platform.Gemini]: 'Gemini',
-  [Platform.Tongyi]: '通义千问',
-  [Platform.Doubao]: '豆包',
+  chatgpt: 'ChatGPT',
+  gemini: 'Gemini',
+  tongyi: 'Tongyi',
+  doubao: 'Doubao',
 }
 
 function App() {
@@ -54,7 +54,6 @@ function App() {
         loading: false,
       })
 
-      // Check server health
       const cfg = response.config
       if (cfg?.servers?.length) {
         const server = cfg.servers[cfg.activeServerIndex || 0]
@@ -92,14 +91,13 @@ function App() {
   }
 
   if (state.loading) {
-    return <div style={{ padding: '16px', textAlign: 'center', width: '340px' }}>加载中...</div>
+    return <div style={{ padding: '16px', textAlign: 'center', width: '340px' }}>Loading...</div>
   }
 
-  const activeServer = state.config?.servers?.[state.config.activeServerIndex]
+  const activeServer = state.config?.servers?.[state.config?.activeServerIndex || 0]
 
   return (
     <div style={{ width: '340px', padding: '12px', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '13px' }}>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '15px', fontWeight: 600 }}>AI Inbox</span>
@@ -113,30 +111,28 @@ function App() {
           backgroundColor: state.isCollecting ? '#fee2e2' : '#dcfce7',
           color: state.isCollecting ? '#dc2626' : '#16a34a',
         }}>
-          {state.isCollecting ? '暂停' : '开始'}
+          {state.isCollecting ? 'Pause' : 'Start'}
         </button>
       </div>
 
-      {/* Active Platform Detection */}
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
-        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>当前页面</div>
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Current Page</div>
         {state.activePlatform ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', display: 'inline-block' }} />
             <span style={{ fontWeight: 500 }}>{platformLabels[state.activePlatform]}</span>
-            <span style={{ color: '#22c55e', fontSize: '11px' }}>（正在监听）</span>
+            <span style={{ color: '#22c55e', fontSize: '11px' }}>(listening)</span>
           </div>
         ) : (
-          <span style={{ color: '#94a3b8' }}>非 AI 聊天页面</span>
+          <span style={{ color: '#94a3b8' }}>Not an AI chat page</span>
         )}
       </div>
 
-      {/* Server Status */}
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>服务</div>
-            <div style={{ fontWeight: 500 }}>{activeServer?.name || '未配置'}</div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>Server</div>
+            <div style={{ fontWeight: 500 }}>{activeServer?.name || 'Not configured'}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{
@@ -144,17 +140,16 @@ function App() {
               backgroundColor: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af',
             }} />
             <span style={{ fontSize: '11px', color: state.serverHealthy === true ? '#22c55e' : state.serverHealthy === false ? '#ef4444' : '#9ca3af' }}>
-              {state.serverHealthy === true ? '正常' : state.serverHealthy === false ? '不可用' : '检测中'}
+              {state.serverHealthy === true ? 'OK' : state.serverHealthy === false ? 'Offline' : '...'}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Platform Toggles */}
       <div style={{ marginBottom: '10px' }}>
-        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>启用平台</div>
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>Platforms</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-          {Object.values(Platform).map((platform) => {
+          {PLATFORMS.map((platform) => {
             const enabled = state.config?.enabledPlatforms?.includes(platform) ?? true
             return (
               <button
@@ -176,26 +171,24 @@ function App() {
         </div>
       </div>
 
-      {/* Stats */}
       {state.stats && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
           <div style={{ flex: 1, padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '4px', textAlign: 'center' }}>
             <div style={{ fontSize: '16px', fontWeight: 600, color: '#16a34a' }}>{state.stats.totalConversations}</div>
-            <div style={{ fontSize: '10px', color: '#6b7280' }}>已收集</div>
+            <div style={{ fontSize: '10px', color: '#6b7280' }}>Collected</div>
           </div>
           <div style={{ flex: 1, padding: '8px', backgroundColor: '#fef3c7', borderRadius: '4px', textAlign: 'center' }}>
             <div style={{ fontSize: '16px', fontWeight: 600, color: '#d97706' }}>{state.stats.pendingSync}</div>
-            <div style={{ fontSize: '10px', color: '#6b7280' }}>待同步</div>
+            <div style={{ fontSize: '10px', color: '#6b7280' }}>Pending</div>
           </div>
         </div>
       )}
 
-      {/* Settings */}
       <button onClick={openOptions} style={{
         width: '100%', padding: '8px', fontSize: '12px', border: '1px solid #e2e8f0',
         borderRadius: '6px', backgroundColor: 'white', cursor: 'pointer', color: '#374151',
       }}>
-        ⚙️ 服务管理与高级设置
+        Settings
       </button>
     </div>
   )

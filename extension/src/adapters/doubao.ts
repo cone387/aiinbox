@@ -1,8 +1,8 @@
-import { Platform, SyncStatus, UnifiedConversation } from '../types'
+import { Platform, UnifiedConversation } from '../types'
 import { PlatformAdapter, CapturedResponse, ParseResult } from './base'
 
 export class DoubaoAdapter extends PlatformAdapter {
-  platform = Platform.Doubao
+  platform: Platform = 'doubao'
   urlPatterns = [
     'https://www.doubao.com/chat/api/chat',
     'https://doubao.com/chat/api/chat',
@@ -85,7 +85,7 @@ export class DoubaoAdapter extends PlatformAdapter {
         ),
         createdAt: this.nowISO(),
         updatedAt: this.nowISO(),
-        syncStatus: SyncStatus.Pending,
+        syncStatus: 'pending',
       }
 
       return { success: true, conversation }

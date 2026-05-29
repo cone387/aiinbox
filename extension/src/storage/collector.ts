@@ -25,7 +25,7 @@ export class Collector {
           title: conversation.title,
           messageCount: conversation.messages.length,
           updatedAt: conversation.updatedAt,
-          syncStatus: SyncStatus.Pending,
+          syncStatus: 'pending',
         })
 
         // Replace messages
@@ -41,7 +41,7 @@ export class Collector {
         messageCount: conversation.messages.length,
         createdAt: conversation.createdAt,
         updatedAt: conversation.updatedAt,
-        syncStatus: SyncStatus.Pending,
+        syncStatus: 'pending',
       })
       await this.saveMessages(conversation)
     }
@@ -63,7 +63,7 @@ export class Collector {
       messageCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      syncStatus: SyncStatus.Failed,
+      syncStatus: 'failed',
       rawData: truncated,
     })
   }
@@ -108,7 +108,7 @@ export class Collector {
   async getPendingSync(limit = 50): Promise<LocalConversation[]> {
     return db.conversations
       .where('syncStatus')
-      .equals(SyncStatus.Pending)
+      .equals('pending')
       .limit(limit)
       .toArray()
   }
@@ -138,7 +138,7 @@ export class Collector {
    */
   async getStats(): Promise<StorageStats> {
     const total = await db.conversations.count()
-    const pending = await db.conversations.where('syncStatus').equals(SyncStatus.Pending).count()
+    const pending = await db.conversations.where('syncStatus').equals('pending').count()
 
     const all = await db.conversations.toArray()
     const byPlatform: Record<string, number> = {}
@@ -155,7 +155,7 @@ export class Collector {
   async cleanSynced(before: string): Promise<number> {
     const toDelete = await db.conversations
       .where('syncStatus')
-      .equals(SyncStatus.Synced)
+      .equals('synced')
       .filter((c) => c.updatedAt < before)
       .toArray()
 

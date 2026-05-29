@@ -1,8 +1,8 @@
-import { Platform, SyncStatus, UnifiedConversation } from '../types'
+import { Platform, UnifiedConversation } from '../types'
 import { PlatformAdapter, CapturedResponse, ParseResult } from './base'
 
 export class GeminiAdapter extends PlatformAdapter {
-  platform = Platform.Gemini
+  platform: Platform = 'gemini'
   urlPatterns = [
     'https://gemini.google.com/_/BardChatUi/data/',
     'https://gemini.google.com/app/_/data/',
@@ -62,7 +62,7 @@ export class GeminiAdapter extends PlatformAdapter {
         ),
         createdAt: this.nowISO(),
         updatedAt: this.nowISO(),
-        syncStatus: SyncStatus.Pending,
+        syncStatus: 'pending',
       }
 
       return { success: true, conversation }

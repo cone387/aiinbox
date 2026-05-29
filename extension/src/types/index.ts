@@ -1,16 +1,9 @@
-export enum Platform {
-  ChatGPT = 'chatgpt',
-  Gemini = 'gemini',
-  Tongyi = 'tongyi',
-  Doubao = 'doubao',
-}
+// Use string literal union instead of enum to avoid bundling issues
+export type Platform = 'chatgpt' | 'gemini' | 'tongyi' | 'doubao'
 
-export enum SyncStatus {
-  Pending = 'pending',
-  Syncing = 'syncing',
-  Synced = 'synced',
-  Failed = 'failed',
-}
+export const PLATFORMS: Platform[] = ['chatgpt', 'gemini', 'tongyi', 'doubao']
+
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed'
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'unknown'
 
@@ -65,6 +58,6 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   activeServerIndex: 0,
   syncMode: 'realtime',
   batchInterval: 5,
-  enabledPlatforms: [Platform.ChatGPT, Platform.Gemini, Platform.Tongyi, Platform.Doubao],
+  enabledPlatforms: ['chatgpt', 'gemini', 'tongyi', 'doubao'],
   isCollecting: true,
 }

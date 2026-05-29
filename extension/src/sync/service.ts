@@ -59,7 +59,7 @@ export class SyncService {
     if (pending.length === 0) return
 
     const conversationIds = pending.map((c) => c.conversationId)
-    await collector.updateSyncStatus(conversationIds, SyncStatus.Syncing)
+    await collector.updateSyncStatus(conversationIds, 'syncing')
 
     // Build batch payload
     const payload = await Promise.all(
@@ -93,7 +93,7 @@ export class SyncService {
 
       if (response.status === 401) {
         // Auth failed - stop syncing
-        await collector.updateSyncStatus(conversationIds, SyncStatus.Failed)
+        await collector.updateSyncStatus(conversationIds, 'failed')
         this.stop()
         chrome.runtime.sendMessage({ type: 'AUTH_ERROR' })
         return
@@ -110,7 +110,7 @@ export class SyncService {
         ?.filter((r: { action: string }) => r.action !== 'failed')
         .map((r: { conversation_id: string }) => r.conversation_id) || conversationIds
 
-      await collector.updateSyncStatus(syncedIds, SyncStatus.Synced)
+      await collector.updateSyncStatus(syncedIds, 'synced')
 
       // Mark failed ones
       const failedIds = result.errors?.map((e: { conversation_id: string }) => e.conversation_id) || []
@@ -135,14 +135,14 @@ export class SyncService {
 
       const retryCount = queueItem.retryCount + 1
       if (retryCount >= maxRetries) {
-        await collector.updateSyncStatus([convId], SyncStatus.Failed)
+        await collector.updateSyncStatus([convId], 'failed')
         await db.syncQueue.update(queueItem.id!, { status: 'failed', retryCount })
       } else {
         // Exponential backoff: 1min, 2min, 4min, 8min, 16min (capped at 30min)
         const delayMs = Math.min(60000 * Math.pow(2, retryCount - 1), 30 * 60000)
         const nextRetry = new Date(Date.now() + delayMs).toISOString()
 
-        await collector.updateSyncStatus([convId], SyncStatus.Pending)
+        await collector.updateSyncStatus([convId], 'pending')
         await db.syncQueue.update(queueItem.id!, {
           status: 'pending',
           retryCount,

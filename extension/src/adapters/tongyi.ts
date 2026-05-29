@@ -1,8 +1,8 @@
-import { Platform, SyncStatus, UnifiedConversation } from '../types'
+import { Platform, UnifiedConversation } from '../types'
 import { PlatformAdapter, CapturedResponse, ParseResult } from './base'
 
 export class TongyiAdapter extends PlatformAdapter {
-  platform = Platform.Tongyi
+  platform: Platform = 'tongyi'
   urlPatterns = [
     'https://qianwen.biz.aliyun.com/dialog/conversation',
     'https://tongyi.aliyun.com/qianwen/api/chat',
@@ -71,7 +71,7 @@ export class TongyiAdapter extends PlatformAdapter {
         ),
         createdAt: this.nowISO(),
         updatedAt: this.nowISO(),
-        syncStatus: SyncStatus.Pending,
+        syncStatus: 'pending',
       }
 
       return { success: true, conversation }

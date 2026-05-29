@@ -1,8 +1,8 @@
-import { Platform, SyncStatus, UnifiedConversation } from '../types'
+import { Platform, UnifiedConversation } from '../types'
 import { PlatformAdapter, CapturedResponse, ParseResult } from './base'
 
 export class ChatGPTAdapter extends PlatformAdapter {
-  platform = Platform.ChatGPT
+  platform: Platform = 'chatgpt'
   urlPatterns = [
     'https://chat.openai.com/backend-api/conversation',
     'https://chatgpt.com/backend-api/conversation',
@@ -64,7 +64,7 @@ export class ChatGPTAdapter extends PlatformAdapter {
         ),
         createdAt: messages[0]?.timestamp || this.nowISO(),
         updatedAt: messages[messages.length - 1]?.timestamp || this.nowISO(),
-        syncStatus: SyncStatus.Pending,
+        syncStatus: 'pending',
       }
 
       return { success: true, conversation }
