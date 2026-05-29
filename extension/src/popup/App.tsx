@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Platform, ExtensionConfig, ExtensionStatus, PLATFORM_URL_PATTERNS } from '../types'
+import { Platform, ExtensionConfig, ExtensionStatus } from '../types'
 import { StorageStats } from '../storage/collector'
 
 interface PopupState {
@@ -37,19 +37,22 @@ function App() {
   async function loadData() {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' })
+      if (!response) { setState((s) => ({ ...s, loading: false })); return }
+
       setState({
-        status: response?.status || 'paused',
-        isCollecting: response?.isCollecting || false,
-        activePlatform: response?.activePlatform || null,
-        config: response?.config || null,
-        stats: response?.stats || null,
+        status: response.status || 'paused',
+        isCollecting: response.isCollecting || false,
+        activePlatform: response.activePlatform || null,
+        config: response.config || null,
+        stats: response.stats || null,
         serverHealthy: null,
         loading: false,
       })
 
       // Check server health
-      if (response?.config?.servers?.length) {
-        const server = response.config.servers[response.config.activeServerIndex]
+      const cfg = response.config
+      if (cfg?.servers?.length) {
+        const server = cfg.servers[cfg.activeServerIndex || 0]
         if (server?.url) {
           const healthResp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url })
           setState((s) => ({ ...s, serverHealthy: healthResp?.healthy ?? false }))
@@ -147,7 +150,7 @@ function App() {
         <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>启用平台</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
           {Object.values(Platform).map((platform) => {
-            const enabled = state.config?.enabledPlatforms.includes(platform) ?? true
+            const enabled = state.config?.enabledPlatforms?.includes(platform) ?? true
             return (
               <button
                 key={platform}
