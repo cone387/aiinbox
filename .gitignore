@@ -1,0 +1,33 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Data
+data/
+
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+extension/dist/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+backend/vendor/
+
+# Logs
+*.log

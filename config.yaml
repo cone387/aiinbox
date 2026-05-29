@@ -1,0 +1,48 @@
+server:
+  host: "127.0.0.1"
+  port: 8080
+  mode: "debug"
+
+database:
+  driver: "sqlite"
+  dsn: "./data/aiinbox.db"
+  max_open_conns: 10
+  max_idle_conns: 5
+
+auth:
+  jwt_secret: "change-me-to-a-secure-secret-at-least-32-chars"
+  jwt_expire_minutes: 1440
+  api_token_expire_days: 30
+  bcrypt_cost: 12
+
+search:
+  max_results: 100
+
+export:
+  dir: "./data/exports"
+  file_expire_hours: 24
+  max_concurrent: 3
+
+rate_limit:
+  enabled: true
+  auth_max_attempts: 10
+  auth_block_minutes: 15
+  search_per_minute: 30
+  api_per_minute: 120
+
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "chrome-extension://*"
+  allowed_methods:
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "DELETE"
+    - "OPTIONS"
+
+log:
+  level: "info"
+  format: "text"
+  output: "stdout"
