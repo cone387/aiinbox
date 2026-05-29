@@ -49,9 +49,12 @@ func main() {
 
 	// Setup services
 	authService := services.NewAuthService(db, &cfg.Auth)
+	syncService := services.NewSyncService(db)
 
 	// Setup handlers
 	authHandler := handlers.NewAuthHandler(authService)
+	syncHandler := handlers.NewSyncHandler(syncService)
+	convHandler := handlers.NewConversationHandler(db)
 
 	// Setup middleware
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.JWTSecret, db)
@@ -94,6 +97,16 @@ func main() {
 	}
 	{
 		protected.POST("/auth/token", authHandler.GenerateAPIToken)
+
+		// Sync routes
+		protected.POST("/conversations/sync", syncHandler.SyncConversation)
+		protected.POST("/conversations/batch", syncHandler.BatchSync)
+
+		// Query routes
+		protected.GET("/conversations", convHandler.ListConversations)
+		protected.GET("/conversations/:id", convHandler.GetConversation)
+		protected.GET("/conversations/:id/messages", convHandler.GetMessages)
+		protected.DELETE("/conversations", convHandler.BatchDelete)
 	}
 
 	// Start server
