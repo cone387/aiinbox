@@ -11,7 +11,9 @@ export default function Login() {
   const handleLogin = async (values: { username: string; password: string }) => {
     await login(values.username, values.password)
     if (useAuthStore.getState().isAuthenticated) {
-      navigate('/')
+      const params = new URLSearchParams(window.location.search)
+      const returnUrl = params.get('return')
+      navigate(returnUrl ? decodeURIComponent(returnUrl) : '/')
     }
   }
 

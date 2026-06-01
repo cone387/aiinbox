@@ -6,7 +6,8 @@
   "permissions": [
     "storage",
     "tabs",
-    "activeTab"
+    "activeTab",
+    "identity"
   ],
   "host_permissions": [
     "https://chat.openai.com/*",
@@ -16,7 +17,9 @@
     "https://qianwen.aliyun.com/*",
     "https://www.doubao.com/*",
     "https://doubao.com/*",
-    "http://localhost:9531/*"
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "src/background/index.ts",

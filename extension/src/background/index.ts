@@ -244,6 +244,54 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
         break
       }
 
+      case 'START_AUTH': {
+        const serverUrl = (message.url as string).replace(/\/$/, '')
+        try {
+          const redirectUri = chrome.identity.getRedirectURL()
+          const stateNonce = Math.random().toString(36).slice(2)
+          const authUrl = `${serverUrl}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}&state=${stateNonce}&app_name=${encodeURIComponent('AI Inbox \u63D2\u4EF6')}`
+
+          const responseUrl = await chrome.identity.launchWebAuthFlow({
+            url: authUrl,
+            interactive: true,
+          })
+
+          if (!responseUrl) {
+            sendResponse({ ok: false, error: 'no_response' })
+            break
+          }
+
+          const respUrlObj = new URL(responseUrl)
+          const token = respUrlObj.searchParams.get('token')
+          const error = respUrlObj.searchParams.get('error')
+
+          if (error) { sendResponse({ ok: false, error }); break }
+          if (!token) { sendResponse({ ok: false, error: 'no_token' }); break }
+
+          // Save token to matching server config
+          if (!config.servers) config.servers = []
+          const idx = config.servers.findIndex((s) => s.url === serverUrl)
+          if (idx >= 0) {
+            config.servers[idx].token = token
+            config.activeServerIndex = idx
+          } else {
+            config.servers.push({ url: serverUrl, token, name: serverUrl, isDefault: config.servers.length === 0 })
+            config.activeServerIndex = config.servers.length - 1
+          }
+          await chrome.storage.local.set({ config })
+
+          if (config.isCollecting) {
+            stopCollecting()
+            startCollecting()
+          }
+
+          sendResponse({ ok: true, token })
+        } catch (err) {
+          sendResponse({ ok: false, error: String(err) })
+        }
+        break
+      }
+
       case 'SAVE_CONFIG': {
         config = message.config as ExtensionConfig
         await chrome.storage.local.set({ config })

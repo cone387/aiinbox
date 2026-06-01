@@ -41,9 +41,7 @@ export interface ExtensionConfig {
   batchInterval: number
   enabledPlatforms: Platform[]
   isCollecting: boolean
-}
-
-export interface PlatformStats {
+}export interface PlatformStats {
   platform: Platform
   collected: number
   pendingSync: number

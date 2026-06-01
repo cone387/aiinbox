@@ -4,6 +4,7 @@ import zhCN from 'antd/locale/zh_CN'
 import { useAuthStore } from './stores/authStore'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import Authorize from './pages/Authorize'
 import ConversationList from './pages/ConversationList'
 import ConversationDetail from './pages/ConversationDetail'
 import Search from './pages/Search'
@@ -23,6 +24,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/authorize" element={<Authorize />} />
           <Route
             path="/"
             element={
