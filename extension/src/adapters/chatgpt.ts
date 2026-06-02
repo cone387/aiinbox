@@ -21,14 +21,12 @@ export class ChatGPTAdapter extends PlatformAdapter {
         return { success: false, error: 'Empty response body' }
       }
 
-      // ChatGPT streaming response: lines starting with "data: "
-      if (body.includes('data: ')) {
-        return this.parseSSEResponse(body, response.isComplete)
+      if (response.captureMode === 'history' || body.startsWith('{')) {
+        return this.parseJSONResponse(body)
       }
 
-      // JSON response (fetching existing conversation)
-      if (body.startsWith('{')) {
-        return this.parseJSONResponse(body)
+      if (body.includes('data: ')) {
+        return this.parseSSEResponse(body, response.isComplete)
       }
 
       return { success: false, error: 'Unrecognized ChatGPT response format' }

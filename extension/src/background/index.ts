@@ -141,6 +141,7 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           body: message.body || '',
           isComplete: message.isComplete ?? true,
           timestamp: new Date().toISOString(),
+          captureMode,
         })
 
         if (result.success && result.conversation) {

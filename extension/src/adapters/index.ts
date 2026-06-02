@@ -6,7 +6,7 @@ import { TongyiAdapter } from './tongyi'
 import { DoubaoAdapter } from './doubao'
 
 export { PlatformAdapter } from './base'
-export type { CapturedResponse, ParseResult } from './base'
+export type { CapturedResponse, ParseResult, CaptureMode } from './base'
 
 const adapters: PlatformAdapter[] = [
   new ChatGPTAdapter(),

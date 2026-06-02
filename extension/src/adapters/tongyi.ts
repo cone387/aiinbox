@@ -1,12 +1,16 @@
-import { Platform, UnifiedConversation } from '../types'
+import { Platform } from '../types'
 import { PlatformAdapter, CapturedResponse, ParseResult } from './base'
 
 export class TongyiAdapter extends PlatformAdapter {
   platform: Platform = 'tongyi'
+
+  // TODO: capture real API paths via Playwright
   urlPatterns = [
+    // Turn (POST): unverified patterns, needs real capture
     'https://qianwen.biz.aliyun.com/dialog/conversation',
     'https://tongyi.aliyun.com/qianwen/api/chat',
     'https://qianwen.aliyun.com/api/chat',
+    // History (GET): TODO — needs Playwright capture to identify
   ]
 
   matchRequest(url: string): boolean {
@@ -14,68 +18,19 @@ export class TongyiAdapter extends PlatformAdapter {
   }
 
   parseResponse(response: CapturedResponse): ParseResult {
-    try {
-      const messages: Array<{ role: string; content: string; timestamp?: string }> = []
-      let conversationId = ''
-      let title = ''
-
-      // Tongyi uses SSE format with "data:" prefix
-      const lines = response.body.split('\n')
-
-      for (const line of lines) {
-        let data = line
-        if (line.startsWith('data:')) {
-          data = line.slice(5).trim()
-        }
-        if (!data || data === '[DONE]') continue
-
-        try {
-          const parsed = JSON.parse(data)
-
-          if (parsed.sessionId || parsed.msgId) {
-            conversationId = parsed.sessionId || parsed.msgId || conversationId
-          }
-          if (parsed.sessionTitle) {
-            title = parsed.sessionTitle
-          }
-
-          // Extract content from various response formats
-          const content =
-            parsed.contents?.[0]?.content ||
-            parsed.content ||
-            parsed.text ||
-            parsed.result?.text ||
-            ''
-
-          const role = parsed.role || parsed.contents?.[0]?.role || 'assistant'
-
-          if (content) {
-            messages.push({ role, content, timestamp: parsed.gmtCreate })
-          }
-        } catch {
-          // Skip unparseable lines
-        }
-      }
-
-      if (messages.length === 0) {
-        return { success: false, error: 'No messages found in Tongyi response' }
-      }
-
-      const conversation: UnifiedConversation = {
-        id: this.generateId(),
-        platform: this.platform,
-        conversationId: conversationId || this.generateId(),
-        title: title || messages[0]?.content.slice(0, 50) || 'Tongyi Chat',
-        messages: messages.map((m) =>
-          this.createMessage(this.mapRole(m.role), m.content, m.timestamp, response.isComplete)
-        ),
-        createdAt: this.nowISO(),
-        updatedAt: this.nowISO(),
-      }
-
-      return { success: true, conversation }
-    } catch (err) {
-      return { success: false, error: `Tongyi parse error: ${err}` }
+    if (response.captureMode === 'history') {
+      return this.parseHistoryResponse(response)
     }
+    return this.parseTurnResponse(response)
+  }
+
+  private parseTurnResponse(_response: CapturedResponse): ParseResult {
+    // TODO: implement after Playwright capture reveals real turn response format
+    return { success: false, error: 'Tongyi turn mode: pending adaptation (need real API capture)' }
+  }
+
+  private parseHistoryResponse(_response: CapturedResponse): ParseResult {
+    // TODO: implement after Playwright capture reveals real history response format
+    return { success: false, error: 'Tongyi history mode: pending adaptation (need real API capture)' }
   }
 }

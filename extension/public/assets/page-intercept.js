@@ -2,20 +2,30 @@
   'use strict'
 
   var INTERCEPT_RULES = [
-    // ChatGPT: POST (new turn)
+    // ===== ChatGPT (adapted) =====
+    // POST: new turn / streaming response
     { pattern: '/backend-api/conversation', method: 'POST', exclude: ['/conversations', '/stream_status', '/textdocs', '/init'], mode: 'turn' },
     { pattern: '/backend-api/f/conversation', method: 'POST', exclude: ['/conversations', '/stream_status', '/textdocs', '/init', '/prepare'], mode: 'turn' },
-    // ChatGPT: GET (history load)
+    // GET: load existing conversation (history)
     { pattern: '/backend-api/conversation/', method: 'GET', exclude: ['/conversations', '/stream_status', '/textdocs', '/init'], mode: 'history' },
-    // Gemini
+
+    // ===== Gemini (pending adaptation — need Playwright capture) =====
+    // TODO: verify turn POST pattern and add history GET pattern
     { pattern: '/_/BardChatUi/data/', method: 'POST', exclude: [], mode: 'turn' },
     { pattern: '/app/_/data/', method: 'POST', exclude: [], mode: 'turn' },
-    // Tongyi
+    // TODO: history GET rule — need real API path
+
+    // ===== Tongyi / Qianwen (pending adaptation — need Playwright capture) =====
+    // TODO: verify turn POST pattern and add history GET pattern
     { pattern: '/dialog/conversation', method: 'POST', exclude: [], mode: 'turn' },
     { pattern: '/qianwen/api/chat', method: 'POST', exclude: [], mode: 'turn' },
-    // Doubao
+    // TODO: history GET rule — need real API path
+
+    // ===== Doubao (pending adaptation — need Playwright capture) =====
+    // TODO: verify turn POST pattern and add history GET pattern
     { pattern: '/chat/api/chat', method: 'POST', exclude: [], mode: 'turn' },
     { pattern: '/samantha/chat/completion', method: 'POST', exclude: [], mode: 'turn' },
+    // TODO: history GET rule — need real API path
   ]
 
   function shouldIntercept(url, method) {

@@ -1,5 +1,7 @@
 import { Platform, UnifiedConversation, UnifiedMessage, MessageRole } from '../types'
 
+export type CaptureMode = 'turn' | 'history'
+
 export interface CapturedResponse {
   requestId: string
   tabId: number
@@ -9,6 +11,7 @@ export interface CapturedResponse {
   body: string
   isComplete: boolean
   timestamp: string
+  captureMode: CaptureMode
 }
 
 export interface ParseResult {
