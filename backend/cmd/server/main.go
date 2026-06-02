@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cone387/aiinbox/backend/internal/config"
@@ -69,12 +72,12 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
-	// CORS
+	// CORS - Allow all origins for self-hosted app
+	// Security is handled by API token authentication
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     cfg.CORS.AllowedOrigins,
+		AllowAllOrigins:  true,
 		AllowMethods:     cfg.CORS.AllowedMethods,
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		AllowCredentials: true,
 	}))
 
 	// Health check
@@ -126,6 +129,32 @@ func main() {
 		// Stats routes
 		protected.GET("/stats/overview", statsHandler.GetOverview)
 		protected.GET("/stats/timeline", statsHandler.GetTimeline)
+	}
+
+	// Serve frontend static files (SPA)
+	frontendDist := filepath.Join("frontend", "dist")
+	if _, err := os.Stat(frontendDist); err == nil {
+		fileServer := http.FileServer(http.Dir(frontendDist))
+		indexHTML := filepath.Join(frontendDist, "index.html")
+
+		r.NoRoute(func(c *gin.Context) {
+			// Skip API routes
+			if strings.HasPrefix(c.Request.URL.Path, "/api/") ||
+				strings.HasPrefix(c.Request.URL.Path, "/health") {
+				c.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+			// Try to serve as static file
+			staticPath := filepath.Join(frontendDist, c.Request.URL.Path)
+			if _, err := os.Stat(staticPath); err == nil {
+				fileServer.ServeHTTP(c.Writer, c.Request)
+				return
+			}
+			// SPA fallback: serve index.html
+			c.File(indexHTML)
+		})
+	} else {
+		log.Printf("Warning: frontend dist not found at %s, SPA routes will not be served", frontendDist)
 	}
 
 	// Start server

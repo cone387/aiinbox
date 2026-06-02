@@ -1,16 +1,5 @@
 import { getAdapterByPlatform } from '../adapters'
-import { syncService } from '../sync/service'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG } from '../types'
-
-// Lazy-load collector to avoid Dexie initialization issues at service worker startup
-let _collector: any = null
-async function getCollector() {
-  if (!_collector) {
-    const mod = await import('../storage/collector')
-    _collector = mod.collector
-  }
-  return _collector
-}
 
 // Platform URL detection patterns
 const PLATFORM_PATTERNS: Record<string, string[]> = {
@@ -81,21 +70,12 @@ function startCollecting(): void {
   const server = config.servers?.[config.activeServerIndex]
   if (!server) return
 
-  syncService.start({
-    serverUrl: server.url,
-    authToken: server.token,
-    mode: config.syncMode || 'realtime',
-    batchInterval: config.batchInterval || 5,
-    maxRetries: 5,
-  })
-
   updateIcon('active')
   console.log('[AI Inbox] Started collecting')
 }
 
 function stopCollecting(): void {
   isCollecting = false
-  syncService.stop()
   updateIcon('paused')
   console.log('[AI Inbox] Stopped collecting')
 }
@@ -145,8 +125,8 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
   try {
     switch (message.type) {
       case 'RESPONSE_COMPLETE': {
-        // Always save locally, even if sync is not configured
         const platform = message.platform as Platform
+        const captureMode = message.captureMode || 'turn'
         if (!config.enabledPlatforms?.includes(platform)) { sendResponse({ ok: false }); return }
 
         const adapter = getAdapterByPlatform(platform)
@@ -163,16 +143,51 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           timestamp: new Date().toISOString(),
         })
 
-        const coll = await getCollector()
-
         if (result.success && result.conversation) {
-          await coll.save(result.conversation)
-          if (isCollecting) {
-            syncService.triggerSync()
+          console.log(`[AI Inbox] Parsed ${captureMode} from ${platform} (${result.conversation.messages.length} messages)`)
+
+          // Direct upload to backend
+          const server = config.servers?.[config.activeServerIndex]
+          if (server?.url && server?.token) {
+            try {
+              const payload = {
+                conversations: [{
+                  platform: result.conversation.platform,
+                  conversation_id: result.conversation.conversationId,
+                  title: result.conversation.title,
+                  messages: result.conversation.messages.map(m => ({
+                    role: m.role,
+                    content: m.content,
+                    timestamp: m.timestamp,
+                    is_complete: m.isComplete,
+                  })),
+                  created_at: result.conversation.createdAt,
+                  updated_at: result.conversation.updatedAt,
+                }],
+              }
+
+              const response = await fetch(`${server.url}/api/v1/conversations/batch`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${server.token}`,
+                },
+                body: JSON.stringify(payload),
+              })
+
+              if (response.ok) {
+                console.log(`[AI Inbox] Uploaded ${captureMode} from ${platform} directly`)
+              } else {
+                const errText = await response.text()
+                console.error(`[AI Inbox] Upload failed: ${response.status} - ${errText}`)
+              }
+            } catch (err) {
+              console.error(`[AI Inbox] Upload error:`, err)
+            }
+          } else {
+            console.log(`[AI Inbox] No server configured, skipping upload`)
           }
-          console.log(`[AI Inbox] Saved conversation from ${platform} (${result.conversation.messages.length} messages)`)
         } else if (message.body?.length > 100) {
-          await coll.saveRaw(platform, message.body.slice(0, 1_000_000))
           console.warn(`[AI Inbox] Parse failed for ${platform}: ${result.error}`)
         } else {
           console.log(`[AI Inbox] Skipped ${platform} response: ${result.error}`)
@@ -195,18 +210,11 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           activePlatform = detectPlatformFromUrl(currentUrl)
         } catch {}
 
-        let stats = { totalConversations: 0, pendingSync: 0, byPlatform: {} as Record<string, number> }
-        try {
-          const coll = await getCollector()
-          stats = await coll.getStats()
-        } catch {}
-
         sendResponse({
           isCollecting,
           status: isCollecting ? 'active' : 'paused',
           activePlatform,
           config,
-          stats,
         })
         break
       }

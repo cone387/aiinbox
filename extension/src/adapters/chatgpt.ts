@@ -6,6 +6,8 @@ export class ChatGPTAdapter extends PlatformAdapter {
   urlPatterns = [
     'https://chat.openai.com/backend-api/conversation',
     'https://chatgpt.com/backend-api/conversation',
+    'https://chat.openai.com/backend-api/conversation/',
+    'https://chatgpt.com/backend-api/conversation/',
   ]
 
   matchRequest(url: string): boolean {
@@ -47,6 +49,12 @@ export class ChatGPTAdapter extends PlatformAdapter {
 
       try {
         const parsed = JSON.parse(data)
+
+        // Skip version identifier and token messages
+        if (typeof parsed === 'string' || parsed.type === 'resume_conversation_token') {
+          continue
+        }
+
         if (parsed.conversation_id) {
           conversationId = parsed.conversation_id
         }
@@ -54,39 +62,69 @@ export class ChatGPTAdapter extends PlatformAdapter {
           title = parsed.title
         }
 
-        // Extract message content from streaming chunks
-        if (parsed.message?.content?.parts) {
-          const role = parsed.message.author?.role || 'assistant'
-          const content = parsed.message.content.parts.join('')
-          if (content) {
-            // Keep only the latest version of each message (streaming sends cumulative)
-            const existingIdx = messages.findIndex(
-              (m) => m.role === role && parsed.message?.id
-            )
-            if (existingIdx >= 0) {
-              messages[existingIdx].content = content
-            } else {
-              messages.push({
-                role,
-                content,
-                timestamp: parsed.message.create_time
-                  ? new Date(parsed.message.create_time * 1000).toISOString()
-                  : undefined,
-              })
+        // ===== CRDT operations: add/append/patch =====
+        if (parsed.o !== undefined && parsed.v !== undefined) {
+          if (parsed.o === 'add' && parsed.v?.message?.content?.parts) {
+            this.handleAddMessage(parsed.v.message, messages)
+          }
+          if (parsed.o === 'append' && typeof parsed.v === 'string') {
+            this.appendToLastMessage(messages, parsed.v)
+          }
+          if (parsed.o === 'patch' && Array.isArray(parsed.v)) {
+            for (const op of parsed.v) {
+              if (op.o === 'append' && typeof op.v === 'string') {
+                this.appendToLastMessage(messages, op.v)
+              }
             }
           }
+          continue
+        }
+
+        // ===== Version Checkpoint entries: {v: {message: {...}}, c: N} =====
+        if (parsed.v?.message && typeof parsed.c === 'number') {
+          this.handleVersionCheckpoint(parsed.v.message, messages)
+          continue
+        }
+
+        // ===== Bare value delta: {"v": "text"} — implicit append =====
+        if (parsed.v !== undefined && parsed.o === undefined && parsed.c === undefined) {
+          if (typeof parsed.v === 'string') {
+            this.appendToLastMessage(messages, parsed.v)
+            continue
+          }
+          // Bare array: {"v": [{...ops...}]} — batch of CRDT operations
+          if (Array.isArray(parsed.v)) {
+            for (const op of parsed.v) {
+              if (op.o === 'append' && typeof op.v === 'string') {
+                this.appendToLastMessage(messages, op.v)
+              }
+            }
+            continue
+          }
+        }
+
+        // ===== title_generation events =====
+        if (parsed.type === 'title_generation' && parsed.title) {
+          title = parsed.title
+          continue
+        }
+
+        // Skip legacy input_message/output_message for user/assistant roles
+        // (already handled by Version Checkpoint entries above)
+        if (parsed.type === 'input_message' || parsed.type === 'output_message') {
+          continue
         }
       } catch {
         // Skip unparseable lines
       }
     }
 
-    if (messages.length === 0) {
+    // Deduplicate: remove system messages and empty entries
+    const dedupedMessages = this.deduplicateMessages(messages)
+
+    if (dedupedMessages.length === 0) {
       return { success: false, error: 'No messages found in SSE response' }
     }
-
-    // Deduplicate: keep only the last message per role (streaming sends updates)
-    const dedupedMessages = this.deduplicateMessages(messages)
 
     const conversation: UnifiedConversation = {
       id: this.generateId(),
@@ -98,7 +136,6 @@ export class ChatGPTAdapter extends PlatformAdapter {
       ),
       createdAt: dedupedMessages[0]?.timestamp || this.nowISO(),
       updatedAt: dedupedMessages[dedupedMessages.length - 1]?.timestamp || this.nowISO(),
-      syncStatus: 'pending',
     }
 
     return { success: true, conversation }
@@ -135,6 +172,12 @@ export class ChatGPTAdapter extends PlatformAdapter {
         }
       }
 
+      messages.sort((a, b) => {
+        const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0
+        const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0
+        return ta - tb
+      })
+
       if (messages.length === 0) {
         return { success: false, error: 'No messages in JSON response' }
       }
@@ -149,7 +192,6 @@ export class ChatGPTAdapter extends PlatformAdapter {
         ),
         createdAt: messages[0]?.timestamp || this.nowISO(),
         updatedAt: messages[messages.length - 1]?.timestamp || this.nowISO(),
-        syncStatus: 'pending',
       }
 
       return { success: true, conversation }
@@ -159,13 +201,109 @@ export class ChatGPTAdapter extends PlatformAdapter {
   }
 
   private deduplicateMessages(messages: Array<{ role: string; content: string; timestamp?: string }>) {
-    // ChatGPT streaming sends cumulative content updates for the same message
-    // Keep only unique messages by content (last occurrence wins)
-    const seen = new Map<string, typeof messages[0]>()
-    for (const msg of messages) {
-      const key = msg.role + ':' + (msg.timestamp || 'latest')
-      seen.set(key, msg)
+    // Remove system messages, tool messages, and empty entries
+    const filtered = messages.filter((m) =>
+      m.role !== 'system' && m.role !== 'tool' && m.content.length > 0
+    )
+    // Merge consecutive same-role messages (keep last occurrence)
+    const deduped: typeof filtered = []
+    for (const msg of filtered) {
+      const prev = deduped[deduped.length - 1]
+      if (prev?.role === msg.role) {
+        // Merge content: keep the one with more content (usually the later one)
+        if (msg.content.length >= prev.content.length) {
+          deduped[deduped.length - 1] = msg
+        }
+      } else {
+        deduped.push(msg)
+      }
     }
-    return Array.from(seen.values())
+    return deduped
+  }
+
+  /**
+   * Handle CRDT 'add' operation: creates a new message entry.
+   */
+  private handleAddMessage(
+    msg: any,
+    messages: Array<{ role: string; content: string; timestamp?: string }>
+  ): void {
+    const role = msg.author?.role || 'assistant'
+    const content = msg.content?.parts?.join('') || ''
+    if (content || role !== 'system') {
+      messages.push({
+        role,
+        content,
+        timestamp: msg.create_time
+          ? new Date(msg.create_time * 1000).toISOString()
+          : undefined,
+      })
+    }
+  }
+
+  /**
+   * Handle version checkpoint entries: {v: {message: {...}}, c: N}
+   * These carry the actual message content (user & assistant) in ChatGPT's v2 SSE format.
+   */
+  private handleVersionCheckpoint(
+    msg: any,
+    messages: Array<{ role: string; content: string; timestamp?: string }>
+  ): void {
+    const role = msg.author?.role
+    if (!role || role === 'system') return
+
+    const ct = msg.content?.content_type
+    const parts = msg.content?.parts
+
+    if (ct === 'model_editable_context') {
+      // Placeholder for assistant's editable context — create a marker entry
+      // so subsequent append operations have a target.
+      // Only push if no same-role empty entry already exists
+      const last = messages[messages.length - 1]
+      if (!last || last.role !== role || last.content !== '') {
+        messages.push({ role, content: '', timestamp: undefined })
+      }
+    } else if (ct === 'text' && Array.isArray(parts)) {
+      const content = parts.join('')
+      // If last message is same role + empty/placeholder, update it instead of creating new
+      const last = messages[messages.length - 1]
+      if (last?.role === role && last.content === '') {
+        // Update the placeholder with actual text content
+        messages[messages.length - 1] = {
+          role,
+          content,
+          timestamp: msg.create_time
+            ? new Date(msg.create_time * 1000).toISOString()
+            : last.timestamp,
+        }
+      } else if (content || role === 'user') {
+        messages.push({
+          role,
+          content,
+          timestamp: msg.create_time
+            ? new Date(msg.create_time * 1000).toISOString()
+            : undefined,
+        })
+      }
+    }
+  }
+
+  /**
+   * Append text to the last non-system message in the array.
+   */
+  private appendToLastMessage(
+    messages: Array<{ role: string; content: string; timestamp?: string }>,
+    text: string
+  ): void {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role !== 'system') {
+        messages[i].content += text
+        return
+      }
+    }
+    // Fallback: append to last message if no non-system found
+    if (messages.length > 0) {
+      messages[messages.length - 1].content += text
+    }
   }
 }

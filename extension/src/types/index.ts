@@ -3,8 +3,6 @@ export type Platform = 'chatgpt' | 'gemini' | 'tongyi' | 'doubao'
 
 export const PLATFORMS: Platform[] = ['chatgpt', 'gemini', 'tongyi', 'doubao']
 
-export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed'
-
 export type MessageRole = 'user' | 'assistant' | 'system' | 'unknown'
 
 export interface UnifiedMessage {
@@ -23,7 +21,6 @@ export interface UnifiedConversation {
   messages: UnifiedMessage[]
   createdAt: string
   updatedAt: string
-  syncStatus: SyncStatus
 }
 
 export interface ServerConfig {

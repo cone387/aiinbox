@@ -31,3 +31,25 @@ backend/vendor/
 
 # Logs
 *.log
+
+# Test files in root
+test-*.spec.ts
+test-*.js
+test-*.txt
+playwright.config.ts
+test-results/
+.playwright-mcp/
+
+# MCP config
+.mcp.json
+extension/.mcp.json
+
+# TypeScript build artifacts
+tsconfig.tsbuildinfo
+
+# Claude Code
+.claude/
+
+# Root-level test dependencies (should be in extension/)
+/package.json
+/package-lock.json

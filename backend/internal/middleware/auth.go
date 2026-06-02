@@ -52,6 +52,13 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
+		// Debug: log token prefix
+		tokenLen := len(token)
+		if tokenLen > 15 {
+			tokenLen = 15
+		}
+		fmt.Printf("[Auth] Token received: %s...\n", token[:tokenLen])
+
 		// Try JWT first
 		claims, err := m.validateJWT(token)
 		if err == nil {
@@ -60,6 +67,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		fmt.Printf("[Auth] JWT validation failed: %v\n", err)
 
 		// Try API Token
 		user, err := m.validateAPIToken(token)
@@ -69,6 +77,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		fmt.Printf("[Auth] API token validation failed: %v\n", err)
 
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 			"error":   "unauthorized",

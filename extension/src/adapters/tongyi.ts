@@ -71,7 +71,6 @@ export class TongyiAdapter extends PlatformAdapter {
         ),
         createdAt: this.nowISO(),
         updatedAt: this.nowISO(),
-        syncStatus: 'pending',
       }
 
       return { success: true, conversation }

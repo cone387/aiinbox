@@ -1,19 +1,21 @@
 (function () {
   'use strict'
 
-  // Only intercept POST requests to actual chat completion endpoints
   var INTERCEPT_RULES = [
-    // ChatGPT: only POST to /backend-api/conversation (not /conversations, /stream_status, etc)
-    { pattern: '/backend-api/conversation', method: 'POST', exclude: ['/conversations', '/stream_status', '/textdocs', '/init'] },
+    // ChatGPT: POST (new turn)
+    { pattern: '/backend-api/conversation', method: 'POST', exclude: ['/conversations', '/stream_status', '/textdocs', '/init'], mode: 'turn' },
+    { pattern: '/backend-api/f/conversation', method: 'POST', exclude: ['/conversations', '/stream_status', '/textdocs', '/init', '/prepare'], mode: 'turn' },
+    // ChatGPT: GET (history load)
+    { pattern: '/backend-api/conversation/', method: 'GET', exclude: ['/conversations', '/stream_status', '/textdocs', '/init'], mode: 'history' },
     // Gemini
-    { pattern: '/_/BardChatUi/data/', method: 'POST', exclude: [] },
-    { pattern: '/app/_/data/', method: 'POST', exclude: [] },
+    { pattern: '/_/BardChatUi/data/', method: 'POST', exclude: [], mode: 'turn' },
+    { pattern: '/app/_/data/', method: 'POST', exclude: [], mode: 'turn' },
     // Tongyi
-    { pattern: '/dialog/conversation', method: 'POST', exclude: [] },
-    { pattern: '/qianwen/api/chat', method: 'POST', exclude: [] },
+    { pattern: '/dialog/conversation', method: 'POST', exclude: [], mode: 'turn' },
+    { pattern: '/qianwen/api/chat', method: 'POST', exclude: [], mode: 'turn' },
     // Doubao
-    { pattern: '/chat/api/chat', method: 'POST', exclude: [] },
-    { pattern: '/samantha/chat/completion', method: 'POST', exclude: [] },
+    { pattern: '/chat/api/chat', method: 'POST', exclude: [], mode: 'turn' },
+    { pattern: '/samantha/chat/completion', method: 'POST', exclude: [], mode: 'turn' },
   ]
 
   function shouldIntercept(url, method) {
@@ -25,10 +27,10 @@
         for (var j = 0; j < rule.exclude.length; j++) {
           if (url.includes(rule.exclude[j])) { excluded = true; break }
         }
-        if (!excluded) return true
+        if (!excluded) return rule.mode
       }
     }
-    return false
+    return null
   }
 
   function detectPlatform() {
@@ -52,7 +54,8 @@
     var url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input && input.url ? input.url : ''))
     var method = (init && init.method) ? init.method.toUpperCase() : 'GET'
 
-    if (!shouldIntercept(url, method)) {
+    var captureMode = shouldIntercept(url, method)
+    if (!captureMode) {
       return originalFetch.apply(this, args)
     }
 
@@ -66,16 +69,16 @@
       }
     }
 
-    console.log('[AI Inbox] Intercepting ' + platform + ' POST: ' + url.split('?')[0])
+    console.log('[AI Inbox] ' + captureMode + ' ' + platform + ' ' + method + ': ' + url.split('?')[0])
 
     return originalFetch.apply(this, args).then(function (response) {
       var cloned = response.clone()
-      processResponse(cloned, platform, requestId, url, requestBody)
+      processResponse(cloned, platform, requestId, url, requestBody, captureMode)
       return response
     })
   }
 
-  function processResponse(response, platform, requestId, url, requestBody) {
+  function processResponse(response, platform, requestId, url, requestBody, captureMode) {
     var contentType = response.headers.get('content-type') || ''
 
     if (contentType.includes('text/event-stream') || contentType.includes('stream')) {
@@ -96,12 +99,13 @@
               body: fullBody,
               requestBody: requestBody,
               isComplete: true,
+              captureMode: captureMode,
             })
             return
           }
           fullBody += decoder.decode(result.value, { stream: true })
           readChunk()
-        }).catch(function (err) {
+        }).catch(function () {
           if (fullBody.length > 0) {
             console.log('[AI Inbox] Stream interrupted, sending partial (' + fullBody.length + ' bytes)')
             sendToExtension({
@@ -111,6 +115,7 @@
               body: fullBody,
               requestBody: requestBody,
               isComplete: false,
+              captureMode: captureMode,
             })
           }
         })
@@ -118,7 +123,6 @@
       readChunk()
     } else {
       response.text().then(function (text) {
-        // Only send if it looks like conversation data (has reasonable size)
         if (text.length > 50) {
           console.log('[AI Inbox] Response captured (' + text.length + ' bytes)')
           sendToExtension({
@@ -128,6 +132,7 @@
             body: text,
             requestBody: requestBody,
             isComplete: true,
+            captureMode: captureMode,
           })
         }
       }).catch(function () {})
@@ -147,7 +152,8 @@
   XMLHttpRequest.prototype.send = function (body) {
     var url = this._aiinbox_url || ''
     var method = this._aiinbox_method || 'GET'
-    if (shouldIntercept(url, method)) {
+    var captureMode = shouldIntercept(url, method)
+    if (captureMode) {
       var platform = detectPlatform()
       var requestId = 'xhr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
       var reqBody = typeof body === 'string' ? body : ''
@@ -162,6 +168,7 @@
             body: text,
             requestBody: reqBody,
             isComplete: true,
+            captureMode: captureMode,
           })
         }
       })

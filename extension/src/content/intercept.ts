@@ -25,9 +25,20 @@ window.addEventListener('message', (event) => {
 
   const { type, payload } = event.data
   if (type === 'RESPONSE_COMPLETE' && payload) {
-    chrome.runtime.sendMessage({
-      type: 'RESPONSE_COMPLETE',
-      ...payload,
-    }).catch(() => {})
+    console.log('[AI Inbox Content] Relaying', payload.captureMode, payload.platform, payload.body?.length, 'bytes')
+    try {
+      chrome.runtime.sendMessage({
+        type: 'RESPONSE_COMPLETE',
+        ...payload,
+      }, (resp) => {
+        if (chrome.runtime.lastError) {
+          console.error('[AI Inbox Content] Chrome runtime error:', chrome.runtime.lastError)
+        } else {
+          console.log('[AI Inbox Content] Background responded:', resp)
+        }
+      })
+    } catch (err) {
+      console.error('[AI Inbox Content] Failed to relay to background:', err)
+    }
   }
 })

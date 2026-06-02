@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS, DEFAULT_CONFIG } from '../types'
 
 interface StorageStats {
@@ -21,8 +21,8 @@ interface PopupState {
 const platformLabels: Record<Platform, string> = {
   chatgpt: 'ChatGPT',
   gemini: 'Gemini',
-  tongyi: '\u901A\u4E49\u5343\u95EE',
-  doubao: '\u8C46\u5305',
+  tongyi: '通义千问',
+  doubao: '豆包',
 }
 
 function App() {
@@ -37,23 +37,20 @@ function App() {
     loading: true,
   })
 
+  const configRef = useRef(state.config)
+  configRef.current = state.config
+
   const doHealthCheck = useCallback(async (cfg?: ExtensionConfig) => {
-    const c = cfg || state.config
+    const c = cfg || configRef.current
     const server = c.servers?.[c.activeServerIndex || 0]
     if (!server?.url) return
     try {
       const resp = await chrome.runtime.sendMessage({ type: 'HEALTH_CHECK', url: server.url, token: server.token })
       setState((s) => ({ ...s, serverOk: resp?.server ?? false, authOk: resp?.auth ?? false }))
     } catch {}
-  }, [state.config])
-
-  useEffect(() => {
-    loadData()
-    const interval = setInterval(() => doHealthCheck(), 30000)
-    return () => clearInterval(interval)
   }, [])
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' })
       if (!response) { setState((s) => ({ ...s, loading: false })); return }
@@ -73,7 +70,24 @@ function App() {
     } catch {
       setState((s) => ({ ...s, loading: false }))
     }
-  }
+  }, [doHealthCheck])
+
+  useEffect(() => {
+    loadData()
+    const interval = setInterval(() => doHealthCheck(), 60000)
+
+    const handler = (changes: Record<string, any>, namespace: string) => {
+      if (namespace === 'local' && changes.config) {
+        loadData()
+      }
+    }
+    chrome.storage.onChanged.addListener(handler)
+
+    return () => {
+      clearInterval(interval)
+      chrome.storage.onChanged.removeListener(handler)
+    }
+  }, [loadData, doHealthCheck])
 
   async function toggleCollecting() {
     const response = await chrome.runtime.sendMessage({ type: 'TOGGLE_COLLECTING' })
@@ -92,7 +106,7 @@ function App() {
   }
 
   if (state.loading) {
-    return <div style={{ padding: '16px', textAlign: 'center', width: '340px' }}>{'\u52A0\u8F7D\u4E2D...'}</div>
+    return <div style={{ padding: '16px', textAlign: 'center', width: '340px' }}>加载中...</div>
   }
 
   const activeServer = state.config.servers?.[state.config.activeServerIndex || 0]
@@ -111,21 +125,21 @@ function App() {
           backgroundColor: state.isCollecting ? '#fee2e2' : '#dcfce7',
           color: state.isCollecting ? '#dc2626' : '#16a34a',
         }}>
-          {state.isCollecting ? '\u6682\u505C' : '\u5F00\u59CB'}
+          {state.isCollecting ? '暂停' : '开始'}
         </button>
       </div>
 
       {/* Current page */}
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
-        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>{'\u5F53\u524D\u9875\u9762'}</div>
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>当前页面</div>
         {state.activePlatform ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', display: 'inline-block' }} />
             <span style={{ fontWeight: 500 }}>{platformLabels[state.activePlatform]}</span>
-            <span style={{ color: '#22c55e', fontSize: '11px' }}>{'\uFF08\u76D1\u542C\u4E2D\uFF09'}</span>
+            <span style={{ color: '#22c55e', fontSize: '11px' }}>（监听中）</span>
           </div>
         ) : (
-          <span style={{ color: '#94a3b8' }}>{'\u975E AI \u804A\u5929\u9875\u9762'}</span>
+          <span style={{ color: '#94a3b8' }}>非 AI 聊天页面</span>
         )}
       </div>
 
@@ -133,20 +147,26 @@ function App() {
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>{'\u670D\u52A1'}</div>
-            <div style={{ fontWeight: 500, fontSize: '12px' }}>{activeServer?.name || '\u672A\u914D\u7F6E'}</div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>服务</div>
+            <div style={{ fontWeight: 500, fontSize: '12px' }}>{activeServer?.name || '未配置'}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ textAlign: 'center' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block', backgroundColor: state.serverOk === true ? '#22c55e' : state.serverOk === false ? '#ef4444' : '#d1d5db' }} />
-              <div style={{ fontSize: '9px', color: '#6b7280' }}>{'\u670D\u52A1'}</div>
+              <div style={{ fontSize: '9px', color: '#6b7280' }}>服务</div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block', backgroundColor: state.authOk === true ? '#22c55e' : state.authOk === false ? '#ef4444' : '#d1d5db' }} />
               <div style={{ fontSize: '9px', color: '#6b7280' }}>Token</div>
             </div>
+            {state.authOk === true && (
+              <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 500 }}>✓ 已授权</span>
+            )}
+            {state.authOk === false && state.serverOk === true && (
+              <span style={{ fontSize: '10px', color: '#ef4444' }}>未授权</span>
+            )}
             <button onClick={() => doHealthCheck()} style={{ padding: '2px 6px', fontSize: '10px', border: '1px solid #d1d5db', borderRadius: '3px', cursor: 'pointer', backgroundColor: 'white' }}>
-              {'\u5237\u65B0'}
+              刷新
             </button>
           </div>
         </div>
@@ -154,7 +174,7 @@ function App() {
 
       {/* Platform toggles */}
       <div style={{ marginBottom: '10px' }}>
-        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>{'\u542F\u7528\u5E73\u53F0'}</div>
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>启用平台</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
           {PLATFORMS.map((platform) => {
             const enabled = enabledPlatforms.includes(platform)
@@ -177,11 +197,11 @@ function App() {
         <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
           <div style={{ flex: 1, padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '4px', textAlign: 'center' }}>
             <div style={{ fontSize: '16px', fontWeight: 600, color: '#16a34a' }}>{state.stats.totalConversations}</div>
-            <div style={{ fontSize: '10px', color: '#6b7280' }}>{'\u5DF2\u6536\u96C6'}</div>
+            <div style={{ fontSize: '10px', color: '#6b7280' }}>已收集</div>
           </div>
           <div style={{ flex: 1, padding: '8px', backgroundColor: '#fef3c7', borderRadius: '4px', textAlign: 'center' }}>
             <div style={{ fontSize: '16px', fontWeight: 600, color: '#d97706' }}>{state.stats.pendingSync}</div>
-            <div style={{ fontSize: '10px', color: '#6b7280' }}>{'\u5F85\u540C\u6B65'}</div>
+            <div style={{ fontSize: '10px', color: '#6b7280' }}>待同步</div>
           </div>
         </div>
       )}
@@ -191,7 +211,7 @@ function App() {
         width: '100%', padding: '8px', fontSize: '12px', border: '1px solid #e2e8f0',
         borderRadius: '6px', backgroundColor: 'white', cursor: 'pointer', color: '#374151',
       }}>
-        {'\u2699\uFE0F \u670D\u52A1\u7BA1\u7406\u4E0E\u8BBE\u7F6E'}
+        {'⚙️ 服务管理与设置'}
       </button>
     </div>
   )
