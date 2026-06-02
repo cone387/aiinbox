@@ -154,7 +154,9 @@ function App() {
               <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 500 }}>✓ 已授权</span>
             )}
             {state.authOk === false && state.serverOk === true && (
-              <span style={{ fontSize: '10px', color: '#ef4444' }}>未授权</span>
+              <span style={{ fontSize: '10px', color: activeServer?.token ? '#ef4444' : '#d97706' }}>
+                {activeServer?.token ? '授权失效' : '需要授权'}
+              </span>
             )}
             <button onClick={() => doHealthCheck()} style={{ padding: '2px 6px', fontSize: '10px', border: '1px solid #d1d5db', borderRadius: '3px', cursor: 'pointer', backgroundColor: 'white' }}>
               刷新

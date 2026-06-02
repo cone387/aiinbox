@@ -63,11 +63,11 @@ async function loadConfig(): Promise<void> {
 
 function startCollecting(): void {
   if (isCollecting) return
-  isCollecting = true
 
   const server = config.servers?.[config.activeServerIndex]
-  if (!server) return
+  if (!server?.url || !server?.token) return
 
+  isCollecting = true
   updateIcon('active')
   console.log('[AI Inbox] Started collecting')
 }
@@ -177,6 +177,9 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
 
               if (response.ok) {
                 console.log(`[AI Inbox] Uploaded ${captureMode} from ${platform} directly`)
+              } else if (response.status === 401) {
+                console.error(`[AI Inbox] Upload auth failed (401) for ${platform}`)
+                updateIcon('error')
               } else {
                 const errText = await response.text()
                 console.error(`[AI Inbox] Upload failed: ${response.status} - ${errText}`)
