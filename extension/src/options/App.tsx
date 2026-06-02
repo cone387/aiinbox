@@ -29,8 +29,6 @@ function App() {
           ...DEFAULT_CONFIG,
           servers: [{ url: raw.serverUrl || 'http://localhost:9531', token: raw.authToken || '', name: '本地服务', isDefault: true }],
           enabledPlatforms: raw.enabledPlatforms || DEFAULT_CONFIG.enabledPlatforms,
-          syncMode: raw.syncMode || 'realtime',
-          batchInterval: raw.batchInterval || 5,
           isCollecting: raw.isCollecting ?? true,
         }
         await chrome.storage.local.set({ config: cfg })
@@ -239,26 +237,6 @@ function App() {
         })}
       </div>
 
-      {/* Sync settings */}
-      <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
-        <h2 style={{ fontSize: '15px', marginBottom: '10px' }}>同步设置</h2>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <span style={{ fontSize: '13px', color: '#64748b' }}>模式：</span>
-          <select value={config.syncMode} onChange={(e) => persist({ ...config, syncMode: e.target.value as 'realtime' | 'batch' })}
-            style={{ padding: '5px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}>
-            <option value="realtime">实时同步</option>
-            <option value="batch">定时批量</option>
-          </select>
-          {config.syncMode === 'batch' && (
-            <>
-              <input type="number" min={5} max={1440} value={config.batchInterval}
-                onChange={(e) => persist({ ...config, batchInterval: parseInt(e.target.value) || 5 })}
-                style={{ width: '60px', padding: '5px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }} />
-              <span style={{ fontSize: '13px', color: '#6b7280' }}>分钟</span>
-            </>
-          )}
-        </div>
-      </div>
     </div>
   )
 }

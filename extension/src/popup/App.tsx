@@ -1,18 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS, DEFAULT_CONFIG } from '../types'
 
-interface StorageStats {
-  totalConversations: number
-  pendingSync: number
-  byPlatform: Record<string, number>
-}
-
 interface PopupState {
   status: ExtensionStatus
   isCollecting: boolean
   activePlatform: Platform | null
   config: ExtensionConfig
-  stats: StorageStats | null
   serverOk: boolean | null
   authOk: boolean | null
   loading: boolean
@@ -31,7 +24,6 @@ function App() {
     isCollecting: false,
     activePlatform: null,
     config: DEFAULT_CONFIG,
-    stats: null,
     serverOk: null,
     authOk: null,
     loading: true,
@@ -62,7 +54,6 @@ function App() {
         isCollecting: response.isCollecting || false,
         activePlatform: response.activePlatform || null,
         config: cfg,
-        stats: response.stats || null,
         loading: false,
       }))
 
@@ -191,20 +182,6 @@ function App() {
           })}
         </div>
       </div>
-
-      {/* Stats */}
-      {state.stats && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-          <div style={{ flex: 1, padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '16px', fontWeight: 600, color: '#16a34a' }}>{state.stats.totalConversations}</div>
-            <div style={{ fontSize: '10px', color: '#6b7280' }}>已收集</div>
-          </div>
-          <div style={{ flex: 1, padding: '8px', backgroundColor: '#fef3c7', borderRadius: '4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '16px', fontWeight: 600, color: '#d97706' }}>{state.stats.pendingSync}</div>
-            <div style={{ fontSize: '10px', color: '#6b7280' }}>待同步</div>
-          </div>
-        </div>
-      )}
 
       {/* Settings */}
       <button onClick={() => chrome.runtime.openOptionsPage()} style={{

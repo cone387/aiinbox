@@ -34,14 +34,8 @@ export interface ServerConfig {
 export interface ExtensionConfig {
   servers: ServerConfig[]
   activeServerIndex: number
-  syncMode: 'realtime' | 'batch'
-  batchInterval: number
   enabledPlatforms: Platform[]
   isCollecting: boolean
-}export interface PlatformStats {
-  platform: Platform
-  collected: number
-  pendingSync: number
 }
 
 export type ExtensionStatus = 'active' | 'paused' | 'error'
@@ -51,8 +45,6 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     { url: 'http://localhost:9531', token: '', name: '本地服务', isDefault: true },
   ],
   activeServerIndex: 0,
-  syncMode: 'realtime',
-  batchInterval: 5,
   enabledPlatforms: ['chatgpt', 'gemini', 'tongyi', 'doubao'],
   isCollecting: true,
 }

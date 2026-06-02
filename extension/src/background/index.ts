@@ -41,8 +41,6 @@ async function loadConfig(): Promise<void> {
             isDefault: true,
           }],
           enabledPlatforms: cfg.enabledPlatforms || DEFAULT_CONFIG.enabledPlatforms,
-          syncMode: cfg.syncMode || 'realtime',
-          batchInterval: cfg.batchInterval || 5,
           isCollecting: cfg.isCollecting ?? true,
         }
         await chrome.storage.local.set({ config })
@@ -127,6 +125,7 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
       case 'RESPONSE_COMPLETE': {
         const platform = message.platform as Platform
         const captureMode = message.captureMode || 'turn'
+        if (!isCollecting) { sendResponse({ ok: false }); return }
         if (!config.enabledPlatforms?.includes(platform)) { sendResponse({ ok: false }); return }
 
         const adapter = getAdapterByPlatform(platform)
