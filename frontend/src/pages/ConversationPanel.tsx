@@ -6,7 +6,7 @@ import { search as searchApi, SearchParams as ApiSearchParams } from '../api/sea
 import { Conversation, ConversationDetail } from '../types'
 import dayjs from 'dayjs'
 import ConversationDetailContent from './ConversationDetailContent'
-import { useLayout } from '../components/Layout'
+import { useLayout, usePlatformIcon } from '../components/Layout'
 import './ConversationPanel.css'
 
 const platformOptions = [
@@ -16,17 +16,11 @@ const platformOptions = [
   { value: 'doubao', label: '豆包' },
 ]
 
-const platformColors: Record<string, string> = {
-  chatgpt: '#19c37d',
-  gemini: '#4285f4',
-  tongyi: '#722ed1',
-  doubao: '#fa541c',
-}
-
 export default function ConversationPanel() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { searchKeyword } = useLayout()
+  const PlatformIcon = usePlatformIcon()
 
   // List state
   const [convs, setConvs] = useState<Conversation[]>([])
@@ -203,29 +197,20 @@ export default function ConversationPanel() {
     navigate(`/conversations/${convId}`)
   }
 
-  function handleParamsChange(newParams: Partial<ListParams>) {
-    setParams(prev => ({ ...prev, ...newParams, page: 1 }))
+  function selectPlatform(platform: string | undefined) {
+    setParams(prev => ({ ...prev, platform: platform ? [platform] : undefined, page: 1 }))
     setSelectedId(null)
     setConvDetail(null)
-  }
-
-  function togglePlatform(platform: string) {
-    const current = params.platform || []
-    const next = current.includes(platform)
-      ? current.filter((x) => x !== platform)
-      : [...current, platform]
-    handleParamsChange({ platform: next.length > 0 ? next : undefined })
-  }
-
-  function clearPlatformFilters() {
-    handleParamsChange({ platform: undefined })
+    if (searchKeyword.length >= 2) {
+      setTimeout(() => doSearch(searchKeyword, 1), 0)
+    }
   }
 
   const isSearch = searchKeyword.length >= 2
   const activeItems = isSearch ? searchResults : convs
   const activeLoading = isSearch ? searchLoading : loading
   const activeLoadingMore = isSearch ? searchLoading : loadingMore
-  const hasActivePlatformFilter = params.platform && params.platform.length > 0
+  const selectedPlatform = params.platform?.[0]
 
   return (
     <div className="conversation-panel">
@@ -233,8 +218,17 @@ export default function ConversationPanel() {
       <div className="col-platform">
         <div className="col-title">平台</div>
         <div className="platform-list">
+          {/* 全部 */}
+          <div
+            className={`platform-item ${!selectedPlatform ? 'active' : ''}`}
+            onClick={() => selectPlatform(undefined)}
+          >
+            <span className="platform-icon"><PlatformIcon platform="" size={14} /></span>
+            <span className="platform-label">全部</span>
+            <span className="platform-count">{convs.length}</span>
+          </div>
           {platformOptions.map((opt) => {
-            const selected = params.platform?.includes(opt.value)
+            const selected = selectedPlatform === opt.value
             const count = isSearch
               ? searchResults.filter(c => c.platform === opt.value).length
               : convs.filter(c => c.platform === opt.value).length
@@ -242,32 +236,15 @@ export default function ConversationPanel() {
               <div
                 key={opt.value}
                 className={`platform-item ${selected ? 'active' : ''}`}
-                onClick={() => togglePlatform(opt.value)}
+                onClick={() => selectPlatform(opt.value)}
               >
-                <span className="platform-dot" style={{ backgroundColor: platformColors[opt.value] }}></span>
+                <span className="platform-icon"><PlatformIcon platform={opt.value} size={14} /></span>
                 <span className="platform-label">{opt.label}</span>
-                {selected && (
-                  <button
-                    className="platform-clear"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      clearPlatformFilters()
-                    }}
-                    title="取消筛选"
-                  >
-                    ×
-                  </button>
-                )}
                 <span className="platform-count">{count}</span>
               </div>
             )
           })}
         </div>
-        {hasActivePlatformFilter && (
-          <button className="clear-all-btn" onClick={clearPlatformFilters}>
-            清除全部
-          </button>
-        )}
       </div>
 
       {/* Column 2: Conversation List */}
@@ -289,9 +266,9 @@ export default function ConversationPanel() {
                   className={`conv-list-item ${conv.id === selectedId ? 'active' : ''}`}
                   onClick={() => handleSelect(conv.id)}
                 >
-                  <span className="conv-list-platform-dot" style={{
-                    backgroundColor: platformColors[conv.platform] || '#999',
-                  }}></span>
+                  <span className="conv-list-icon">
+                    <PlatformIcon platform={conv.platform} size={14} />
+                  </span>
                   <div className="conv-list-body">
                     <span className="conv-list-title">{conv.title || 'Untitled'}</span>
                     <span className="conv-list-meta">
