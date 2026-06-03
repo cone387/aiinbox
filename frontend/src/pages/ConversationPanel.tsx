@@ -7,6 +7,7 @@ import { search as searchApi, SearchParams as ApiSearchParams } from '../api/sea
 import { Conversation, ConversationDetail } from '../types'
 import dayjs from 'dayjs'
 import ConversationDetailContent from './ConversationDetailContent'
+import { useLayout } from '../components/Layout'
 import './ConversationPanel.css'
 
 const platformOptions = [
@@ -34,7 +35,7 @@ type ViewMode = 'list' | 'search'
 export default function ConversationPanel() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const { sidebarCollapsed: navCollapsed, toggleSidebar: toggleNav } = useLayout()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
 
   // List state
@@ -254,10 +255,10 @@ export default function ConversationPanel() {
         <div className="topbar-row topbar-search">
           <button
             className="topbar-toggle"
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? '展开列表' : '折叠列表'}
+            onClick={toggleNav}
+            title={navCollapsed ? '展开导航' : '折叠导航'}
           >
-            {sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            {navCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </button>
           <Input
             prefix={<SearchOutlined style={{ color: '#bbb' }} />}
@@ -354,7 +355,7 @@ export default function ConversationPanel() {
       {/* Two-column area */}
       <div className="panel-body">
         {/* Sidebar */}
-        <div className={`panel-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <div className="panel-sidebar">
           {viewMode === 'search' && searchKeyword.length >= 2 && searchResults.length > 0 && (
             <div className="search-result-info">
               找到 {searchResults.length} 个对话

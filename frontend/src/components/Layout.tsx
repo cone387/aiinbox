@@ -1,3 +1,4 @@
+import { createContext, useContext, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Layout as AntLayout, Menu } from 'antd'
 import {
@@ -11,17 +12,27 @@ import { useAuthStore } from '../stores/authStore'
 
 const { Sider, Content } = AntLayout
 
+export const LayoutContext = createContext({
+  sidebarCollapsed: false,
+  toggleSidebar: () => {},
+})
+
+export function useLayout() {
+  return useContext(LayoutContext)
+}
+
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const logout = useAuthStore((s) => s.logout)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const menuItems = [
-    { key: '/', icon: <MessageOutlined />, label: '\u5BF9\u8BDD' },
-    { key: '/stats', icon: <BarChartOutlined />, label: '\u7EDF\u8BA1' },
+    { key: '/', icon: <MessageOutlined />, label: '对话' },
+    { key: '/stats', icon: <BarChartOutlined />, label: '统计' },
     { key: '/tokens', icon: <KeyOutlined />, label: 'API Tokens' },
-    { key: '/settings', icon: <SettingOutlined />, label: '\u8BBE\u7F6E' },
-    { key: 'logout', icon: <LogoutOutlined />, label: '\u9000\u51FA', danger: true },
+    { key: '/settings', icon: <SettingOutlined />, label: '设置' },
+    { key: 'logout', icon: <LogoutOutlined />, label: '退出', danger: true },
   ]
 
   const handleMenuClick = ({ key }: { key: string }) => {
@@ -35,22 +46,31 @@ export default function Layout() {
   const selectedKey = location.pathname === '/' ? '/' : `/${location.pathname.split('/')[1]}`
 
   return (
-    <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider width={200} collapsible collapsedWidth={56} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
-        <div style={{ padding: '16px', fontWeight: 600, fontSize: '16px', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          AI Inbox
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          items={menuItems}
-          onClick={handleMenuClick}
-          style={{ borderRight: 0 }}
-        />
-      </Sider>
-      <Content style={{ padding: 0, backgroundColor: '#ffffff' }}>
-        <Outlet />
-      </Content>
-    </AntLayout>
+    <LayoutContext.Provider value={{ sidebarCollapsed, toggleSidebar: () => setSidebarCollapsed(s => !s) }}>
+      <AntLayout style={{ minHeight: '100vh' }}>
+        <Sider
+          collapsible
+          collapsed={sidebarCollapsed}
+          collapsedWidth={56}
+          trigger={null}
+          theme="light"
+          style={{ borderRight: '1px solid #f0f0f0' }}
+        >
+          <div style={{ padding: '16px', fontWeight: 600, fontSize: '16px', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+            {!sidebarCollapsed && 'AI Inbox'}
+          </div>
+          <Menu
+            mode="inline"
+            selectedKeys={[selectedKey]}
+            items={menuItems}
+            onClick={handleMenuClick}
+            style={{ borderRight: 0 }}
+          />
+        </Sider>
+        <Content style={{ padding: 0, backgroundColor: '#ffffff' }}>
+          <Outlet />
+        </Content>
+      </AntLayout>
+    </LayoutContext.Provider>
   )
 }

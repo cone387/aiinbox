@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { UserOutlined } from '@ant-design/icons'
 import { ConversationDetail as ConvDetail } from '../types'
 import dayjs from 'dayjs'
 
@@ -49,11 +48,6 @@ export default function ConversationDetailContent({ conv }: Props) {
       <div className="messages-container">
         {conv.messages.map((msg) => (
           <div key={msg.id} className={`message-row ${msg.role}`}>
-            {msg.role === 'assistant' && (
-              <div className="avatar assistant-avatar">
-                <span style={{ fontSize: '14px' }}>🤖</span>
-              </div>
-            )}
             <div className={`message-bubble ${msg.role}`}>
               <div className="message-content">
                 {msg.role === 'user' ? (
@@ -69,11 +63,6 @@ export default function ConversationDetailContent({ conv }: Props) {
                 </button>
               </div>
             </div>
-            {msg.role === 'user' && (
-              <div className="avatar user-avatar">
-                <UserOutlined />
-              </div>
-            )}
           </div>
         ))}
       </div>
