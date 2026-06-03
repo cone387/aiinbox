@@ -93,14 +93,19 @@ func (h *AuthHandler) GenerateAPIToken(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
 	var req struct {
-		Name string `json:"name" binding:"required,min=1,max=128"`
+		Name string `json:"name"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// Default name if not provided
-		req.Name = "Default"
+	_ = c.ShouldBindJSON(&req)
+	name := req.Name
+	if name == "" {
+		name = "Default"
+	}
+	if len(name) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation_error", "message": "name too long"})
+		return
 	}
 
-	token, err := h.AuthService.GenerateAPIToken(userID, req.Name)
+	token, err := h.AuthService.GenerateAPIToken(userID, name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal_error",
@@ -199,4 +204,80 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, tokenPair)
+}
+
+// AuthorizeRequest validates a pending OAuth-like authorize request and returns
+// the app name to display on the consent page.
+func (h *AuthHandler) AuthorizeRequest(c *gin.Context) {
+	redirectURI := c.Query("redirect_uri")
+	if err := services.ValidateRedirectURI(redirectURI); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_redirect_uri", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"app_name":    c.Query("app_name"),
+		"state":       c.Query("state"),
+		"redirect_uri": redirectURI,
+	})
+}
+
+// Authorize grants consent: generates an API token, creates a short-lived
+// auth code, and returns it. The caller (frontend Authorize page) redirects
+// back to the extension with only the code — the token is never in the URL.
+func (h *AuthHandler) Authorize(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var req struct {
+		RedirectURI string `json:"redirect_uri" binding:"required"`
+		State       string `json:"state"`
+		AppName     string `json:"app_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation_error", "message": err.Error()})
+		return
+	}
+	if err := services.ValidateRedirectURI(req.RedirectURI); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_redirect_uri", "message": err.Error()})
+		return
+	}
+
+	tokenName := "浏览器插件授权"
+	if req.AppName != "" {
+		tokenName = req.AppName
+	}
+	apiToken, err := h.AuthService.GenerateAPIToken(userID, tokenName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "message": "failed to generate token"})
+		return
+	}
+
+	code, err := h.AuthService.CreateAuthCode(userID, apiToken.ID, req.State)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "message": "failed to create auth code"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": code})
+}
+
+// ExchangeAuthCode trades a one-time code for the actual API token.
+// This is the only place the API token value is returned to the extension.
+func (h *AuthHandler) ExchangeAuthCode(c *gin.Context) {
+	var req struct {
+		Code  string `json:"code" binding:"required"`
+		State string `json:"state"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation_error", "message": err.Error()})
+		return
+	}
+	apiToken, err := h.AuthService.ExchangeAuthCode(req.Code, req.State)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_code", "message": "auth code is invalid or expired"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"token":      apiToken.Token,
+		"expires_at": apiToken.ExpiresAt,
+	})
 }

@@ -12,8 +12,8 @@ export async function register(username: string, password: string): Promise<void
   await client.post('/auth/register', { username, password })
 }
 
-export async function generateAPIToken(): Promise<{ api_token: string; expires_at: string }> {
-  const { data } = await client.post('/auth/token')
+export async function generateAPIToken(name?: string): Promise<{ api_token: string; expires_at: string }> {
+  const { data } = await client.post('/auth/token', { name })
   return data
 }
 
@@ -23,6 +23,19 @@ export function logout(): void {
   window.location.href = '/login'
 }
 
+// Decode a JWT and check its exp claim. Returns true if valid and not expired.
+function isTokenValid(token: string | null): boolean {
+  if (!token) return false
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    if (typeof payload.exp !== 'number') return false
+    // Consider expired if less than 30s remaining
+    return payload.exp > Date.now() / 1000 + 30
+  } catch {
+    return false
+  }
+}
+
 export function isAuthenticated(): boolean {
-  return !!localStorage.getItem('access_token')
+  return isTokenValid(localStorage.getItem('access_token'))
 }

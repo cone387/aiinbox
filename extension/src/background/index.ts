@@ -273,10 +273,30 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           }
 
           const respUrlObj = new URL(responseUrl)
-          const token = respUrlObj.searchParams.get('token')
+          const code = respUrlObj.searchParams.get('code')
+          const returnedState = respUrlObj.searchParams.get('state')
           const error = respUrlObj.searchParams.get('error')
 
           if (error) { sendResponse({ ok: false, error }); break }
+          if (!code) { sendResponse({ ok: false, error: 'no_code' }); break }
+          if (returnedState !== stateNonce) { sendResponse({ ok: false, error: 'state_mismatch' }); break }
+
+          // Exchange code for token via POST
+          const exchangeResp = await fetch(`${serverUrl}/api/v1/auth/exchange`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, state: stateNonce }),
+          })
+
+          if (!exchangeResp.ok) {
+            const errText = await exchangeResp.text()
+            sendResponse({ ok: false, error: 'exchange_failed: ' + errText })
+            break
+          }
+
+          const exchangeData = await exchangeResp.json()
+          const token = exchangeData.token
+
           if (!token) { sendResponse({ ok: false, error: 'no_token' }); break }
 
           // Save token to matching server config

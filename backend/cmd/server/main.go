@@ -66,6 +66,7 @@ func main() {
 	// Setup middleware
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.JWTSecret, db)
 	apiLimiter := middleware.NewRateLimiter(cfg.RateLimit.APIPerMinute, time.Minute)
+	authLimiter := middleware.NewRateLimiter(cfg.RateLimit.AuthMaxAttempts, time.Duration(cfg.RateLimit.AuthBlockMinutes)*time.Minute)
 
 	// Setup router
 	r := gin.New()
@@ -97,10 +98,20 @@ func main() {
 	// Auth routes (public)
 	auth := v1.Group("/auth")
 	{
-		auth.POST("/register", authHandler.Register)
-		auth.POST("/login", authHandler.Login)
+		// Rate-limited auth endpoints to prevent brute-force / mass registration
+		auth.POST("/register", authLimiter.Limit(middleware.IPKeyFunc), authHandler.Register)
+		auth.POST("/login", authLimiter.Limit(middleware.IPKeyFunc), authHandler.Login)
 		auth.POST("/refresh", authHandler.RefreshToken)
+		// Auth code exchange: the extension calls this without a JWT (it's how it obtains one).
+		// Security relies on one-time code + state verification + IP rate limit.
+		auth.POST("/exchange", authLimiter.Limit(middleware.IPKeyFunc), authHandler.ExchangeAuthCode)
 	}
+
+	// Authorize endpoint: serves the consent page flow for browser extension.
+	// GET validates redirect_uri (frontend reads this before showing UI).
+	// POST is protected by RequireAuth — user must be logged in to grant access.
+	r.GET("/authorize", authHandler.AuthorizeRequest)
+	r.POST("/authorize", authMiddleware.RequireAuth(), authHandler.Authorize)
 
 	// Protected routes
 	protected := v1.Group("")

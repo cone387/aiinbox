@@ -19,8 +19,9 @@ type AuthMiddleware struct {
 }
 
 type UserClaims struct {
-	UserID   uint   `json:"user_id"`
-	Username string `json:"username"`
+	UserID    uint   `json:"user_id"`
+	Username  string `json:"username"`
+	TokenType string `json:"token_type"` // "access" or "refresh"
 	jwt.RegisteredClaims
 }
 
@@ -62,6 +63,13 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		// Try JWT first
 		claims, err := m.validateJWT(token)
 		if err == nil {
+			if claims.TokenType != "access" {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"error":   "unauthorized",
+					"message": "invalid token type, expected access token",
+				})
+				return
+			}
 			c.Set("user_id", claims.UserID)
 			c.Set("username", claims.Username)
 			c.Next()
@@ -129,4 +137,16 @@ func (m *AuthMiddleware) validateAPIToken(token string) (*models.User, error) {
 func GetUserID(c *gin.Context) uint {
 	userID, _ := c.Get("user_id")
 	return userID.(uint)
+}
+
+// ParseRefreshToken validates that a JWT is a refresh token and returns its claims.
+func (m *AuthMiddleware) ParseRefreshToken(tokenStr string) (*UserClaims, error) {
+	claims, err := m.validateJWT(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenType != "refresh" {
+		return nil, fmt.Errorf("invalid token type, expected refresh token")
+	}
+	return claims, nil
 }

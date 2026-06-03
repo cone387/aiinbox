@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -20,11 +23,23 @@ var (
 	ErrUserExists       = errors.New("username already exists")
 	ErrInvalidCredentials = errors.New("invalid username or password")
 	ErrTokenExpired     = errors.New("token expired")
+	ErrInvalidAuthCode  = errors.New("invalid or expired auth code")
 )
+
+// authCodeEntry represents a short-lived authorization code.
+type authCodeEntry struct {
+	UserID    uint
+	TokenID   uint // the API token ID to return when exchanged
+	State     string
+	CreatedAt time.Time
+}
 
 type AuthService struct {
 	DB  *gorm.DB
 	Cfg *config.AuthConfig
+
+	authCodes   sync.Map // code -> authCodeEntry
+	authCodesMu sync.Mutex
 }
 
 func NewAuthService(db *gorm.DB, cfg *config.AuthConfig) *AuthService {
@@ -129,11 +144,87 @@ func (s *AuthService) ValidateAPIToken(token string) (*models.APIToken, error) {
 	return &apiToken, nil
 }
 
+// ValidateRedirectURI checks whether a redirect URI is acceptable for the OAuth flow.
+// Allowed: chrome-extension://<id>/... and http(s)://localhost/127.0.0.1
+func ValidateRedirectURI(rawURI string) error {
+	u, err := url.Parse(rawURI)
+	if err != nil {
+		return fmt.Errorf("invalid redirect_uri")
+	}
+	switch u.Scheme {
+	case "chrome-extension":
+		if len(u.Host) < 10 {
+			return fmt.Errorf("invalid chrome extension id")
+		}
+		return nil
+	case "http", "https":
+		host := u.Hostname()
+		if host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost") {
+			return nil
+		}
+		return fmt.Errorf("non-local redirect_uri not allowed")
+	default:
+		return fmt.Errorf("unsupported redirect_uri scheme")
+	}
+}
+
+// CreateAuthCode generates a short-lived authorization code tied to a user + API token.
+// The code must be exchanged within 60 seconds.
+func (s *AuthService) CreateAuthCode(userID uint, tokenID uint, state string) (string, error) {
+	code, err := generateRandomToken(32)
+	if err != nil {
+		return "", err
+	}
+	s.authCodes.Store(code, authCodeEntry{
+		UserID:    userID,
+		TokenID:   tokenID,
+		State:     state,
+		CreatedAt: time.Now(),
+	})
+	// Best-effort cleanup of expired codes
+	go s.cleanupAuthCodes()
+	return code, nil
+}
+
+// ExchangeAuthCode consumes a one-time auth code and returns the associated API token.
+// The code is single-use and expires after 60 seconds.
+func (s *AuthService) ExchangeAuthCode(code, state string) (*models.APIToken, error) {
+	v, ok := s.authCodes.LoadAndDelete(code)
+	if !ok {
+		return nil, ErrInvalidAuthCode
+	}
+	entry := v.(authCodeEntry)
+	if time.Since(entry.CreatedAt) > 60*time.Second {
+		return nil, ErrInvalidAuthCode
+	}
+	if entry.State != state {
+		return nil, ErrInvalidAuthCode
+	}
+	var token models.APIToken
+	if err := s.DB.Where("id = ? AND user_id = ?", entry.TokenID, entry.UserID).First(&token).Error; err != nil {
+		return nil, ErrInvalidAuthCode
+	}
+	return &token, nil
+}
+
+func (s *AuthService) cleanupAuthCodes() {
+	now := time.Now()
+	s.authCodes.Range(func(key, value any) bool {
+		if e, ok := value.(authCodeEntry); ok && now.Sub(e.CreatedAt) > 5*time.Minute {
+			s.authCodes.Delete(key)
+		}
+		return true
+	})
+}
+
 // RefreshToken generates a new token pair from a valid refresh token.
 func (s *AuthService) RefreshToken(refreshToken string) (*TokenPair, error) {
 	claims, err := s.parseToken(refreshToken)
 	if err != nil {
 		return nil, err
+	}
+	if claims.TokenType != "refresh" {
+		return nil, ErrTokenExpired
 	}
 
 	var user models.User
@@ -152,8 +243,9 @@ func (s *AuthService) generateTokenPair(user *models.User) (*TokenPair, error) {
 
 	// Access token
 	accessClaims := &middleware.UserClaims{
-		UserID:   user.ID,
-		Username: user.Username,
+		UserID:    user.ID,
+		Username:  user.Username,
+		TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expireMinutes) * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -167,8 +259,9 @@ func (s *AuthService) generateTokenPair(user *models.User) (*TokenPair, error) {
 
 	// Refresh token (7 days)
 	refreshClaims := &middleware.UserClaims{
-		UserID:   user.ID,
-		Username: user.Username,
+		UserID:    user.ID,
+		Username:  user.Username,
+		TokenType: "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
