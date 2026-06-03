@@ -106,7 +106,7 @@ export default function Layout() {
 
   return (
     <LayoutContext.Provider value={{ searchKeyword, setSearchKeyword }}>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#fff' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#fff', overflow: 'hidden' }}>
         {/* Top nav bar */}
         <div style={{
           display: 'flex',
