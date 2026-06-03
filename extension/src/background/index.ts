@@ -201,7 +201,8 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         })
 
         if (result.success && result.conversation) {
-          console.log(`[AI Inbox] Parsed ${captureMode} from ${platform} (${result.conversation.messages.length} messages)`)
+          const conv = result.conversation
+          console.log(`[AI Inbox] Parsed ${captureMode} from ${platform} (${conv.messages.length} messages, title: "${conv.title}", id: ${conv.conversationId})`)
 
           // Direct upload to backend
           const server = config.servers?.[config.activeServerIndex]
@@ -233,7 +234,9 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
               })
 
               if (response.ok) {
-                console.log(`[AI Inbox] Uploaded ${captureMode} from ${platform} directly`)
+                const resp = await response.json().catch(() => ({}))
+                const action = resp.results?.[0]?.action || 'unknown'
+                console.log(`[AI Inbox] Uploaded ${captureMode} from ${platform} → ${server.url} (${action}, ${resp.created || 0} created, title: "${conv.title}")`)
               } else if (response.status === 401) {
                 console.error(`[AI Inbox] Upload auth failed (401) for ${platform}`)
                 cachedHealth = { server: true, auth: false }

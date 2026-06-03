@@ -42,10 +42,10 @@ func (h *ConversationHandler) ListConversations(c *gin.Context) {
 		pageSize = 20
 	}
 
-	sortBy := c.DefaultQuery("sort_by", "created_at")
+	sortBy := c.DefaultQuery("sort_by", "synced_at")
 	order := c.DefaultQuery("order", "desc")
-	if sortBy != "created_at" && sortBy != "updated_at" {
-		sortBy = "created_at"
+	if sortBy != "created_at" && sortBy != "updated_at" && sortBy != "synced_at" {
+		sortBy = "synced_at"
 	}
 	if order != "asc" && order != "desc" {
 		order = "desc"

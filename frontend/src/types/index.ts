@@ -8,6 +8,7 @@ export interface Conversation {
   message_count: number
   created_at: string
   updated_at: string
+  synced_at: string
 }
 
 export interface Message {
