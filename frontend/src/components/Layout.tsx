@@ -50,7 +50,7 @@ export default function Layout() {
           style={{ borderRight: 0 }}
         />
       </Sider>
-      <Content style={{ padding: '24px', backgroundColor: '#f5f5f5' }}>
+      <Content style={{ padding: '24px', backgroundColor: '#ffffff' }}>
         <Outlet />
       </Content>
     </AntLayout>

@@ -1,41 +1,22 @@
-import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Button, Spin, message } from 'antd'
-import { ArrowLeftOutlined, CopyOutlined, DownloadOutlined, UserOutlined, RobotOutlined } from '@ant-design/icons'
-import ReactMarkdown from 'react-markdown'
-import { getConversation } from '../api/conversations'
+import { useState } from 'react'
+import { UserOutlined } from '@ant-design/icons'
 import { ConversationDetail as ConvDetail } from '../types'
 import dayjs from 'dayjs'
-import './ConversationDetail.css'
 
-export default function ConversationDetail() {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const [conv, setConv] = useState<ConvDetail | null>(null)
-  const [loading, setLoading] = useState(true)
+interface Props {
+  conv: ConvDetail
+}
 
-  useEffect(() => {
-    if (id) fetchData(parseInt(id))
-  }, [id])
-
-  async function fetchData(convId: number) {
-    setLoading(true)
-    try {
-      const data = await getConversation(convId)
-      setConv(data)
-    } catch {
-      message.error('加载对话失败')
-    }
-    setLoading(false)
-  }
+export default function ConversationDetailContent({ conv }: Props) {
+  const [copied, setCopied] = useState(false)
 
   function copyMessage(content: string) {
     navigator.clipboard.writeText(content)
-    message.success('已复制')
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   function exportMarkdown() {
-    if (!conv) return
     let md = `# ${conv.title}\n\n`
     md += `平台: ${conv.platform} | 时间: ${dayjs(conv.created_at).format('YYYY-MM-DD HH:mm')}\n\n---\n\n`
     for (const msg of conv.messages) {
@@ -51,48 +32,40 @@ export default function ConversationDetail() {
     URL.revokeObjectURL(url)
   }
 
-  if (loading) return <div style={{ textAlign: 'center', padding: '48px' }}><Spin size="large" /></div>
-  if (!conv) return null
-
   return (
     <div className="conversation-detail">
-      {/* Header */}
       <div className="conv-header">
-        <div className="conv-header-left">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} className="back-btn">
-            返回
-          </Button>
-          <div className="conv-info">
-            <div className="conv-title">{conv.title}</div>
-            <div className="conv-meta">
-              {conv.platform} · {conv.message_count} 条消息 · {dayjs(conv.created_at).format('YYYY-MM-DD HH:mm')}
-            </div>
+        <div className="conv-info">
+          <div className="conv-title">{conv.title}</div>
+          <div className="conv-meta">
+            {conv.platform} · {conv.message_count} 条消息 · {dayjs(conv.created_at).format('YYYY-MM-DD HH:mm')}
           </div>
         </div>
-        <Button icon={<DownloadOutlined />} onClick={exportMarkdown}>导出</Button>
+        <button className="export-btn" onClick={exportMarkdown} title="导出 Markdown">
+          ↓ 导出
+        </button>
       </div>
 
-      {/* Messages */}
       <div className="messages-container">
         {conv.messages.map((msg) => (
           <div key={msg.id} className={`message-row ${msg.role}`}>
             {msg.role === 'assistant' && (
               <div className="avatar assistant-avatar">
-                <RobotOutlined />
+                <span style={{ fontSize: '14px' }}>🤖</span>
               </div>
             )}
             <div className={`message-bubble ${msg.role}`}>
-              <div className="message-content markdown-body">
+              <div className="message-content">
                 {msg.role === 'user' ? (
                   <p className="user-text">{msg.content}</p>
                 ) : (
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <div className="markdown-body" dangerouslySetInnerHTML={{ __html: simpleMarkdown(msg.content) }} />
                 )}
               </div>
               <div className="message-footer">
                 <span className="timestamp">{dayjs(msg.timestamp).format('HH:mm:ss')}</span>
                 <button className="copy-btn" onClick={() => copyMessage(msg.content)} title="复制">
-                  <CopyOutlined />
+                  {copied ? '✓' : '📋'}
                 </button>
               </div>
             </div>
@@ -106,4 +79,30 @@ export default function ConversationDetail() {
       </div>
     </div>
   )
+}
+
+// Simple markdown renderer
+function simpleMarkdown(text: string): string {
+  let html = text
+    // Escape HTML
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+  // Headers
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+  // Blockquotes
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
+  // Line breaks
+  html = html.replace(/\n/g, '<br/>')
+  return html
 }
