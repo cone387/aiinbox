@@ -1,3 +1,8 @@
+/* Prevent horizontal scroll on body */
+html, body {
+  overflow-x: hidden;
+}
+
 /* 3-column panel: Platform | List | Content */
 .conversation-panel {
   display: flex;
@@ -224,6 +229,7 @@
 .col-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-width: 0;
 }
 
