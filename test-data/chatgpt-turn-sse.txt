@@ -1,0 +1,41 @@
+event: delta_encoding
+data: "v1"
+
+data: {"type": "resume_conversation_token", "kind": "topic", "token": "eyJ...", "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805"}
+
+event: delta
+data: {"p": "", "o": "add", "v": {"message": {"id": "0dcfa62d-e0b6-42e3-9333-c11ad3979cb5", "author": {"role": "system", "name": null, "metadata": {}}, "create_time": null, "update_time": null, "content": {"content_type": "text", "parts": [""]}, "status": "finished_successfully", "end_turn": true, "weight": 0.0, "metadata": {"model_switcher_deny": [], "is_visually_hidden_from_conversation": true}, "recipient": "all", "channel": null}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "error": null, "error_code": null}, "c": 0}
+
+event: delta
+data: {"v": {"message": {"id": "44fd8312-8e9d-41b7-b269-050aed691df6", "author": {"role": "system", "name": null, "metadata": {}}, "create_time": null, "update_time": null, "content": {"content_type": "text", "parts": [""]}, "status": "finished_successfully", "end_turn": true, "weight": 0.0, "metadata": {"rebase_developer_message": true, "model_switcher_deny": [], "is_visually_hidden_from_conversation": true}, "recipient": "all", "channel": null}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "error": null, "error_code": null}, "c": 1}
+
+event: delta
+data: {"v": {"message": {"id": "be19a8d3-8270-42e3-a0ff-f403ccf73c6a", "author": {"role": "system", "name": null, "metadata": {}}, "create_time": 1780457054.275326, "update_time": null, "content": {"content_type": "text", "parts": [""]}, "status": "finished_successfully", "end_turn": null, "weight": 0.0, "metadata": {"request_id": "3275c445-6068-438c-817a-7ee60fbef6c5", "message_source": null, "turn_exchange_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "working_turn_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "model_switcher_deny": [], "is_visually_hidden_from_conversation": true}, "recipient": "all", "channel": null}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "error": null, "error_code": null}, "c": 2}
+
+event: delta
+data: {"v": {"message": {"id": "ae998095-a3b4-4725-8fd6-31337d92ef4d", "author": {"role": "user", "name": null, "metadata": {}}, "create_time": 1780457052.036, "update_time": null, "content": {"content_type": "text", "parts": ["1+1等于几？只回答数字"]}, "status": "finished_successfully", "end_turn": null, "weight": 1.0, "metadata": {"selected_github_repos": [], "serialization_metadata": {"custom_symbol_offsets": []}, "request_id": "3275c445-6068-438c-817a-7ee60fbef6c5", "message_source": null, "turn_exchange_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "working_turn_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "resolved_model_slug": "gpt-5-5", "model_switcher_deny": []}, "recipient": "all", "channel": null}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "error": null, "error_code": null}, "c": 3}
+
+data: {"type": "input_message", "input_message": {"id": "be19a8d3-8270-42e3-a0ff-f403ccf73c6a", "author": {"role": "developer", "name": null, "metadata": {"real_author": "sonic.genui_prefetcher"}}, "create_time": 1780457054.275326, "update_time": null, "content": {"content_type": "developer_content", "instructions": ["..."]}, "status": "finished_successfully", "end_turn": null, "weight": 0.0, "metadata": {}, "recipient": "all", "channel": null}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805"}
+
+data: {"type": "input_message", "input_message": {"id": "ae998095-a3b4-4725-8fd6-31337d92ef4d", "author": {"role": "user", "name": null, "metadata": {}}, "create_time": 1780457052.036, "update_time": null, "content": {"content_type": "text", "parts": ["1+1等于几？只回答数字"]}, "status": "finished_successfully", "end_turn": null, "weight": 1.0, "metadata": {}, "recipient": "all", "channel": null}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805"}
+
+data: {"type": "title_generation", "title": "1+1等于", "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805"}
+
+event: delta
+data: {"v": {"message": {"id": "d5a31bff-8a5a-43c2-aaa9-629af7fb6592", "author": {"role": "assistant", "name": null, "metadata": {}}, "create_time": 1780457054.6270134, "update_time": null, "content": {"content_type": "model_editable_context", "model_set_context": "", "repository": null, "repo_summary": null, "structured_context": null}, "status": "finished_successfully", "end_turn": null, "weight": 1.0, "metadata": {"search_result_groups": [], "request_id": "3275c445-6068-438c-817a-7ee60fbef6c5", "message_type": "next", "turn_exchange_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "working_turn_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "model_slug": "gpt-5-5", "default_model_slug": "auto", "can_save": false, "parent_id": "ae998095-a3b4-4725-8fd6-31337d92ef4d", "model_switcher_deny": []}, "recipient": "all", "channel": null}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "error": null, "error_code": null}, "c": 4}
+
+event: delta
+data: {"v": {"message": {"id": "22e9bc97-52d3-4884-8917-00ea861e82b3", "author": {"role": "assistant", "name": null, "metadata": {}}, "create_time": 1780457054.626505, "update_time": null, "content": {"content_type": "text", "parts": [""]}, "status": "in_progress", "end_turn": null, "weight": 1.0, "metadata": {"citations": [], "content_references": [], "story_events": [], "resolved_model_slug": "gpt-5-5", "request_id": "3275c445-6068-438c-817a-7ee60fbef6c5", "message_type": "next", "turn_exchange_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "working_turn_id": "674ee3d6-f80c-44cf-b2cd-794c2644b961", "model_slug": "gpt-5-5", "default_model_slug": "auto", "parent_id": "d5a31bff-8a5a-43c2-aaa9-629af7fb6592", "model_switcher_deny": []}, "recipient": "all", "channel": "final"}, "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "error": null, "error_code": null}, "c": 5}
+
+data: {"type": "message_marker", "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "message_id": "22e9bc97-52d3-4884-8917-00ea861e82b3", "marker": "user_visible_token", "event": "first"}
+
+data: {"type": "message_marker", "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "message_id": "22e9bc97-52d3-4884-8917-00ea861e82b3", "marker": "final_channel_token", "event": "first"}
+
+event: delta
+data: {"o": "patch", "v": [{"p": "/message/content/parts/0", "o": "append", "v": "2"}, {"p": "/message/status", "o": "replace", "v": "finished_successfully"}, {"p": "/message/end_turn", "o": "replace", "v": true}, {"p": "/message/metadata", "o": "append", "v": {"search_result_groups": [], "finish_details": {"type": "stop", "stop_tokens": [200002]}, "can_save": true, "is_complete": true}}]}
+
+data: {"type": "message_marker", "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805", "message_id": "22e9bc97-52d3-4884-8917-00ea861e82b3", "marker": "last_token", "event": "last"}
+
+data: {"type": "message_stream_complete", "conversation_id": "6a1f9e5d-dc70-83ec-951e-a90c5aa42805"}
+
+data: [DONE]

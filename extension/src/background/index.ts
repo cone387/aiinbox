@@ -12,19 +12,20 @@ const PLATFORM_PATTERNS: Record<string, string[]> = {
 let config: ExtensionConfig = { ...DEFAULT_CONFIG }
 let isCollecting = false
 let cachedHealth = { server: true, auth: true }
+let initPromise: Promise<void>
 
 // Initialize
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[AI Inbox] Extension installed')
-  loadConfig()
+  initPromise = loadConfig()
 })
 
 chrome.runtime.onStartup.addListener(() => {
-  loadConfig()
+  initPromise = loadConfig()
 })
 
-// Load on script start (wrapped to catch any initialization errors)
-setTimeout(() => loadConfig(), 100)
+// Initialize immediately and track promise so message handler can await it
+initPromise = loadConfig()
 
 async function loadConfig(): Promise<void> {
   try {
@@ -83,12 +84,16 @@ function startCollecting(): void {
   if (!server?.url || !server?.token) return
 
   isCollecting = true
+  config.isCollecting = true
+  chrome.storage.local.set({ config })
   updateIcon('active')
   console.log('[AI Inbox] Started collecting')
 }
 
 function stopCollecting(): void {
   isCollecting = false
+  config.isCollecting = false
+  chrome.storage.local.set({ config })
   updateIcon('paused')
   console.log('[AI Inbox] Stopped collecting')
 }
@@ -169,12 +174,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
   try {
+    // Wait for config to load before processing any message
+    if (initPromise) await initPromise
+
     switch (message.type) {
       case 'RESPONSE_COMPLETE': {
         const platform = message.platform as Platform
         const captureMode = message.captureMode || 'turn'
-        if (!isCollecting) { sendResponse({ ok: false }); return }
         if (!config.enabledPlatforms?.includes(platform)) { sendResponse({ ok: false }); return }
+        // Turn captures require collecting mode; history captures (user-initiated) always work
+        if (captureMode === 'turn' && !isCollecting) { sendResponse({ ok: false }); return }
 
         const adapter = getAdapterByPlatform(platform)
         if (!adapter) { sendResponse({ ok: false, error: 'no adapter for ' + platform }); return }
