@@ -34,7 +34,7 @@ export default function Layout() {
     { key: 'logout', icon: <LogoutOutlined />, label: '退出', danger: true },
   ]
 
-  const handleMenuClick = ({ key }: { key: string }) => {
+  const handleMenuClick = (key: string) => {
     if (key === 'logout') {
       logout()
     } else {
@@ -46,85 +46,68 @@ export default function Layout() {
 
   return (
     <LayoutContext.Provider value={{ searchKeyword, setSearchKeyword }}>
-      <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fff' }}>
-        {/* Left nav */}
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#fff' }}>
+        {/* Top nav bar */}
         <div style={{
-          width: 56,
-          flexShrink: 0,
-          borderRight: '1px solid #f0f0f0',
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
-          paddingTop: 16,
-          backgroundColor: '#fafafa',
+          justifyContent: 'space-between',
+          height: 48,
+          padding: '0 16px',
+          borderBottom: '1px solid #e5e5e5',
+          flexShrink: 0,
         }}>
-          <div style={{
-            marginBottom: 24,
-            fontWeight: 600,
-            fontSize: 14,
-            color: '#1a1a1a',
-            writingMode: 'vertical-rl',
-            letterSpacing: 2,
-          }}>
+          {/* Left: brand */}
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a', marginRight: 32 }}>
             AI Inbox
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+
+          {/* Right: nav + search */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {menuItems.map(item => (
               <div
                 key={item.key}
-                onClick={() => handleMenuClick({ key: item.key })}
+                onClick={() => handleMenuClick(item.key)}
                 style={{
                   display: 'flex',
-                  flexDirection: 'column',
                   alignItems: 'center',
-                  gap: 2,
-                  padding: '8px 12px',
-                  borderRadius: 8,
+                  gap: 4,
+                  padding: '6px 12px',
+                  borderRadius: 6,
                   cursor: 'pointer',
-                  fontSize: 12,
+                  fontSize: 13,
                   color: item.key === 'logout' ? '#ff4d4f' : (selectedKey === item.key ? '#1677ff' : '#666'),
                   backgroundColor: selectedKey === item.key ? 'rgba(22,119,255,0.08)' : 'transparent',
                   transition: 'all 0.15s',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <span style={{ fontSize: 18 }}>{item.icon}</span>
-                <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>
+                {item.icon}
+                <span>{item.label}</span>
               </div>
             ))}
-          </div>
-        </div>
 
-        {/* Main content area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          {/* Top bar */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            padding: '8px 16px',
-            borderBottom: '1px solid #e5e5e5',
-            flexShrink: 0,
-          }}>
+            <div style={{ width: 1, height: 20, backgroundColor: '#e5e5e5', margin: '0 8px' }}></div>
+
             <Input
-              prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+              prefix={<SearchOutlined style={{ color: '#bbb', fontSize: 13 }} />}
               placeholder="搜索对话内容..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               allowClear
               style={{
-                width: 280,
-                borderRadius: 8,
+                width: 220,
+                borderRadius: 6,
                 border: '1px solid #e0e0e0',
-                padding: '6px 12px',
               }}
               size="small"
             />
           </div>
+        </div>
 
-          {/* Page content */}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <Outlet />
-          </div>
+        {/* Page content */}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <Outlet />
         </div>
       </div>
     </LayoutContext.Provider>
