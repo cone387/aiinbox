@@ -21,23 +21,19 @@ function ChatGPTIcon({ size = 16 }: { size?: number }) {
 }
 
 function GeminiIcon({ size = 16 }: { size?: number }) {
+  // Google Gemini logo - 4-pointed star with official colors
   return (
-    <svg width={size} height={size} viewBox="0 0 192 192" fill="none" style={{ flexShrink: 0 }}>
-      <defs>
-        <radialGradient id="g-gemini" cx="-122.49" cy="-223.53" r="110.98" fx="-122.49" fy="-223.53" gradientTransform="matrix(1 0 0 -.54 0 -.93)" gradientUnits="userSpaceOnUse">
-          <stop offset=".31" stopColor="#3186ff" />
-          <stop offset=".42" stopColor="#4491ff" />
-          <stop offset=".45" stopColor="#4c96ff" />
-          <stop offset=".81" stopColor="#e7f1ff" />
-          <stop offset=".89" stopColor="#fff" />
-        </radialGradient>
-        <clipPath id="g-gemini-clip">
-          <path d="M164.93 86.68c-13.56-5.84-25.42-13.84-35.6-24.01-10.17-10.17-18.18-22.04-24.01-35.6-2.23-5.19-4.04-10.54-5.42-16.02C99.45 9.26 97.85 8 96 8s-3.45 1.26-3.9 3.05c-1.38 5.48-3.18 10.81-5.42 16.02-5.84 13.56-13.84 25.43-24.01 35.6-10.17 10.16-22.04 18.17-35.6 24.01-5.19 2.23-10.54 4.04-16.02 5.42C9.26 92.55 8 94.15 8 96s1.26 3.45 3.05 3.9c5.48 1.38 10.81 3.18 16.02 5.42 13.56 5.84 25.42 13.84 35.6 24.01 10.17 10.17 18.18 22.04 24.01 35.6 2.24 5.2 4.04 10.54 5.42 16.02A4.03 4.03 0 0 0 96 184c1.85 0 3.45-1.26 3.9-3.05 1.38-5.48 3.18-10.81 5.42-16.02 5.84-13.56 13.84-25.42 24.01-35.6 10.17-10.17 22.04-18.18 35.6-24.01 5.2-2.24 10.54-4.04 16.02-5.42A4.03 4.03 0 0 0 184 96c0-1.85-1.26-3.45-3.05-3.9-5.48-1.38-10.81-3.18-16.02-5.42" />
-        </clipPath>
-      </defs>
-      <g clipPath="url(#g-gemini-clip)">
-        <path d="M-321.98 8h221.96v221.96h-221.96z" fill="url(#g-gemini)" />
-      </g>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      {/* Top point - blue */}
+      <path d="M12 3l-3 5h6l-3-5z" fill="#4285f4" />
+      {/* Right point - red */}
+      <path d="M21 12l-5-3v6l5-3z" fill="#ea4335" />
+      {/* Bottom point - green */}
+      <path d="M12 21l-3-5h6l-3 5z" fill="#34a853" />
+      {/* Left point - yellow */}
+      <path d="M3 12l5-3v6l-5-3z" fill="#fbbc04" />
+      {/* Center diamond */}
+      <rect x="10" y="10" width="4" height="4" rx="0.5" fill="#4285f4" />
     </svg>
   )
 }
@@ -58,14 +54,14 @@ function TongyiIcon({ size = 16 }: { size?: number }) {
 
 function DoubaoIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
-      <rect width="32" height="32" rx="8" fill="#FF4A47" fillOpacity="0.1" />
-      {/* Simplified Doubao bean shape based on official branding */}
-      <path d="M16 5C12 5 8.5 7.5 7.5 11.5C6.5 15.5 8 19 10 21C12 23 14 24 16 25C18 24 20 23 22 21C24 19 25.5 15.5 24.5 11.5C23.5 7.5 20 5 16 5Z" fill="#FF4A47" />
-      <circle cx="13.5" cy="14" r="1.5" fill="#fff" />
-      <circle cx="18.5" cy="14" r="1.5" fill="#fff" />
-      <circle cx="13.5" cy="14" r="0.7" fill="#1a1a2e" />
-      <circle cx="18.5" cy="14" r="0.7" fill="#1a1a2e" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx="6" fill="#FF6B6B" fillOpacity="0.15" />
+      {/* Simplified Doubao bean mascot */}
+      <ellipse cx="12" cy="12.5" rx="5.5" ry="6.5" fill="#FF6B6B" />
+      <circle cx="10" cy="11.5" r="1.8" fill="#fff" />
+      <circle cx="14" cy="11.5" r="1.8" fill="#fff" />
+      <circle cx="10" cy="11.5" r="0.9" fill="#1a1a2e" />
+      <circle cx="14" cy="11.5" r="0.9" fill="#1a1a2e" />
     </svg>
   )
 }
