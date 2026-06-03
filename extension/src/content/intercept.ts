@@ -1,6 +1,16 @@
 // Content script (ISOLATED world) - runs at document_start
 // Injects page-intercept.js and relays captured data to background
 
+// Log forwarding to background
+function forwardLog(level: string, msg: string) {
+  try {
+    chrome.runtime.sendMessage({ type: 'LOG', level, msg }).catch(() => {})
+  } catch {}
+}
+
+const csLog = (msg: string) => { console.log(msg); forwardLog('INFO', msg) }
+const csError = (msg: string) => { console.error(msg); forwardLog('ERROR', msg) }
+
 // Inject immediately - at document_start, documentElement exists but head/body may not
 const s = document.createElement('script')
 s.src = chrome.runtime.getURL('assets/page-intercept.js')
@@ -25,20 +35,20 @@ window.addEventListener('message', (event) => {
 
   const { type, payload } = event.data
   if (type === 'RESPONSE_COMPLETE' && payload) {
-    console.log('[AI Inbox Content] Relaying', payload.captureMode, payload.platform, payload.body?.length, 'bytes')
+    csLog(`[AI Inbox Content] Relaying ${payload.captureMode} ${payload.platform} ${payload.body?.length} bytes`)
     try {
       chrome.runtime.sendMessage({
         type: 'RESPONSE_COMPLETE',
         ...payload,
       }, (resp) => {
         if (chrome.runtime.lastError) {
-          console.error('[AI Inbox Content] Chrome runtime error:', chrome.runtime.lastError)
+          csError(`[AI Inbox Content] Chrome runtime error: ${chrome.runtime.lastError.message}`)
         } else {
-          console.log('[AI Inbox Content] Background responded:', resp)
+          csLog(`[AI Inbox Content] Background responded: ${JSON.stringify(resp)}`)
         }
       })
     } catch (err) {
-      console.error('[AI Inbox Content] Failed to relay to background:', err)
+      csError(`[AI Inbox Content] Failed to relay to background: ${err}`)
     }
   }
 })

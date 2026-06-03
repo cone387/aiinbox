@@ -29,7 +29,7 @@ export default function Authorize() {
       setError('缺少 redirect_uri 参数')
       return
     }
-    client.get('/authorize', {
+    client.get('/authorize/validate', {
       params: { redirect_uri: rawRedirectUri, state: rawState, app_name: rawAppName },
     }).then((resp) => {
       setValidated(resp.data)

@@ -145,7 +145,8 @@ func (s *AuthService) ValidateAPIToken(token string) (*models.APIToken, error) {
 }
 
 // ValidateRedirectURI checks whether a redirect URI is acceptable for the OAuth flow.
-// Allowed: chrome-extension://<id>/... and http(s)://localhost/127.0.0.1
+// Allowed: chrome-extension://<id>/..., https://<id>.chromiumapp.org/ (chrome.identity),
+// and http(s)://localhost/127.0.0.1 for development.
 func ValidateRedirectURI(rawURI string) error {
 	u, err := url.Parse(rawURI)
 	if err != nil {
@@ -157,7 +158,17 @@ func ValidateRedirectURI(rawURI string) error {
 			return fmt.Errorf("invalid chrome extension id")
 		}
 		return nil
-	case "http", "https":
+	case "https":
+		// chrome.identity.getRedirectURL() returns https://<id>.chromiumapp.org/
+		if strings.HasSuffix(u.Hostname(), ".chromiumapp.org") {
+			return nil
+		}
+		host := u.Hostname()
+		if host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost") {
+			return nil
+		}
+		return fmt.Errorf("non-local redirect_uri not allowed")
+	case "http":
 		host := u.Hostname()
 		if host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost") {
 			return nil

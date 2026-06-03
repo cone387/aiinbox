@@ -107,11 +107,11 @@ func main() {
 		auth.POST("/exchange", authLimiter.Limit(middleware.IPKeyFunc), authHandler.ExchangeAuthCode)
 	}
 
-	// Authorize endpoint: serves the consent page flow for browser extension.
-	// GET validates redirect_uri (frontend reads this before showing UI).
-	// POST is protected by RequireAuth — user must be logged in to grant access.
-	r.GET("/authorize", authHandler.AuthorizeRequest)
-	r.POST("/authorize", authMiddleware.RequireAuth(), authHandler.Authorize)
+	// Authorize endpoint: consent flow for browser extension.
+	// GET /authorize falls through to NoRoute (serves the SPA page).
+	// Validation uses a dedicated API endpoint; POST creates the auth code.
+	v1.GET("/authorize/validate", authHandler.AuthorizeRequest)
+	v1.POST("/authorize", authMiddleware.RequireAuth(), authHandler.Authorize)
 
 	// Protected routes
 	protected := v1.Group("")

@@ -11,6 +11,7 @@ const PLATFORM_PATTERNS: Record<string, string[]> = {
 
 let config: ExtensionConfig = { ...DEFAULT_CONFIG }
 let isCollecting = false
+let cachedHealth = { server: true, auth: true }
 
 // Initialize
 chrome.runtime.onInstalled.addListener(() => {
@@ -56,8 +57,22 @@ async function loadConfig(): Promise<void> {
     if (config.isCollecting && server?.url && server?.token) {
       startCollecting()
     }
+
+    // Always start health check alarm if server is configured
+    if (server?.url && server?.token) {
+      startHealthCheck()
+    }
   } catch (err) {
     console.error('[AI Inbox] Failed to load config:', err)
+  }
+}
+
+function startHealthCheck(): void {
+  chrome.alarms.clear('health-check')
+  chrome.alarms.create('health-check', { periodInMinutes: 1 })
+  const server = config.servers?.[config.activeServerIndex]
+  if (server?.url && server?.token) {
+    checkServerHealth(server.url, server.token)
   }
 }
 
@@ -78,16 +93,29 @@ function stopCollecting(): void {
   console.log('[AI Inbox] Stopped collecting')
 }
 
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'health-check') {
+    const server = config.servers?.[config.activeServerIndex]
+    if (server?.url && server?.token) {
+      checkServerHealth(server.url, server.token)
+    }
+  }
+})
+
 async function checkServerHealth(url: string, token?: string): Promise<{ server: boolean; auth: boolean }> {
   let serverOk = false
   let authOk = false
-  try {
-    const resp = await fetch(`${url}/health`, { method: 'GET', signal: AbortSignal.timeout(5000) })
-    if (resp.ok) {
-      const data = await resp.json()
-      serverOk = data.status === 'ok'
-    }
-  } catch {}
+
+  for (let attempt = 0; attempt < 2 && !serverOk; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 300))
+    try {
+      const resp = await fetch(`${url}/health`, { method: 'GET', signal: AbortSignal.timeout(5000) })
+      if (resp.ok) {
+        const data = await resp.json()
+        serverOk = data.status === 'ok'
+      }
+    } catch {}
+  }
 
   if (serverOk && token) {
     try {
@@ -100,7 +128,8 @@ async function checkServerHealth(url: string, token?: string): Promise<{ server:
     } catch {}
   }
 
-  return { server: serverOk, auth: authOk }
+  cachedHealth = { server: serverOk, auth: authOk }
+  return cachedHealth
 }
 
 function detectPlatformFromUrl(url: string): Platform | null {
@@ -113,13 +142,32 @@ function detectPlatformFromUrl(url: string): Platform | null {
   return null
 }
 
+// Logging
+const logBuffer: Array<{ time: string; level: string; msg: string }> = []
+const LOG_MAX = 200
+
+function pushLog(level: string, ...args: any[]) {
+  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
+  logBuffer.push({ time: new Date().toISOString(), level, msg })
+  if (logBuffer.length > LOG_MAX) logBuffer.shift()
+}
+
+// Wrap console methods
+const origLog = console.log
+const origWarn = console.warn
+const origError = console.error
+
+console.log = (...args: any[]) => { pushLog('INFO', ...args); origLog(...args) }
+console.warn = (...args: any[]) => { pushLog('WARN', ...args); origWarn(...args) }
+console.error = (...args: any[]) => { pushLog('ERROR', ...args); origError(...args) }
+
 // Handle messages
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  handleMessage(message, sendResponse)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  handleMessage(message, sender, sendResponse)
   return true
 })
 
-async function handleMessage(message: any, sendResponse: (response?: any) => void) {
+async function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
   try {
     switch (message.type) {
       case 'RESPONSE_COMPLETE': {
@@ -179,6 +227,7 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
                 console.log(`[AI Inbox] Uploaded ${captureMode} from ${platform} directly`)
               } else if (response.status === 401) {
                 console.error(`[AI Inbox] Upload auth failed (401) for ${platform}`)
+                cachedHealth = { server: true, auth: false }
                 updateIcon('error')
               } else {
                 const errText = await response.text()
@@ -186,6 +235,8 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
               }
             } catch (err) {
               console.error(`[AI Inbox] Upload error:`, err)
+              cachedHealth = { server: false, auth: false }
+              updateIcon('error')
             }
           } else {
             console.log(`[AI Inbox] No server configured, skipping upload`)
@@ -218,6 +269,7 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           status: isCollecting ? 'active' : 'paused',
           activePlatform,
           config,
+          health: cachedHealth,
         })
         break
       }
@@ -311,6 +363,11 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
           }
           await chrome.storage.local.set({ config })
 
+          // Immediately refresh health status with new token
+          cachedHealth = { server: true, auth: true }
+          checkServerHealth(serverUrl, token)
+          startHealthCheck()
+
           if (config.isCollecting) {
             stopCollecting()
             startCollecting()
@@ -339,6 +396,25 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
 
       case 'CONFIG_UPDATED': {
         await loadConfig()
+        sendResponse({ ok: true })
+        break
+      }
+
+      case 'LOG': {
+        // Content scripts forward logs here
+        const src = sender.tab ? `tab:${sender.tab.id}` : 'popup'
+        pushLog(message.level || 'INFO', `[${src}]`, message.msg)
+        sendResponse({ ok: true })
+        break
+      }
+
+      case 'GET_LOGS': {
+        sendResponse({ logs: [...logBuffer] })
+        break
+      }
+
+      case 'CLEAR_LOGS': {
+        logBuffer.length = 0
         sendResponse({ ok: true })
         break
       }
