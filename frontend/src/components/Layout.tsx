@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   MessageOutlined,
@@ -76,6 +76,10 @@ export default function Layout() {
   const location = useLocation()
   const logout = useAuthStore((s) => s.logout)
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [activeNav, setActiveNav] = useState(() => {
+    const p = window.location.pathname
+    return p === '/' ? '/' : `/${p.split('/')[1]}`
+  })
 
   const navItems = [
     { key: '/stats', icon: <BarChartOutlined />, label: '统计' },
@@ -87,11 +91,17 @@ export default function Layout() {
     if (key === 'logout') {
       logout()
     } else {
+      setActiveNav(key)
       navigate(key)
     }
   }
 
-  const selectedKey = location.pathname === '/' ? '/' : `/${location.pathname.split('/')[1]}`
+  // Sync activeNav with URL changes
+  useEffect(() => {
+    const p = location.pathname
+    const key = p === '/' ? '/' : `/${p.split('/')[1]}`
+    if (key !== activeNav) setActiveNav(key)
+  }, [location.pathname])
 
   return (
     <LayoutContext.Provider value={{ searchKeyword, setSearchKeyword }}>
@@ -106,12 +116,13 @@ export default function Layout() {
           borderBottom: '1px solid #e5e5e5',
           flexShrink: 0,
         }}>
-          {/* Left: brand + search + 对话 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a', marginRight: 8 }}>
-              AI Inbox
-            </div>
+          {/* Left: brand */}
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a' }}>
+            AI Inbox
+          </div>
 
+          {/* Right: search + nav items + logout */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Input
               prefix={<SearchOutlined style={{ color: '#bbb', fontSize: 13 }} />}
               placeholder="搜索对话内容..."
@@ -127,7 +138,9 @@ export default function Layout() {
             />
 
             <div
-              onClick={() => navigate('/')}
+              onClick={() => {
+                if (location.pathname !== '/') handleMenuClick('/')
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -136,8 +149,8 @@ export default function Layout() {
                 borderRadius: 6,
                 cursor: 'pointer',
                 fontSize: 13,
-                color: selectedKey === '/' ? '#1677ff' : '#666',
-                backgroundColor: selectedKey === '/' ? 'rgba(22,119,255,0.08)' : 'transparent',
+                color: activeNav === '/' ? '#1677ff' : '#666',
+                backgroundColor: activeNav === '/' ? 'rgba(22,119,255,0.08)' : 'transparent',
                 transition: 'all 0.15s',
                 whiteSpace: 'nowrap',
               }}
@@ -145,10 +158,7 @@ export default function Layout() {
               <MessageOutlined />
               <span>对话</span>
             </div>
-          </div>
 
-          {/* Right: nav items + logout */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {navItems.map(item => (
               <div
                 key={item.key}
@@ -161,8 +171,8 @@ export default function Layout() {
                   borderRadius: 6,
                   cursor: 'pointer',
                   fontSize: 13,
-                  color: selectedKey === item.key ? '#1677ff' : '#666',
-                  backgroundColor: selectedKey === item.key ? 'rgba(22,119,255,0.08)' : 'transparent',
+                  color: activeNav === item.key ? '#1677ff' : '#666',
+                  backgroundColor: activeNav === item.key ? 'rgba(22,119,255,0.08)' : 'transparent',
                   transition: 'all 0.15s',
                   whiteSpace: 'nowrap',
                 }}
