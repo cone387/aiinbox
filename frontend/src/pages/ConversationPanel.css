@@ -186,6 +186,40 @@
   text-align: center;
 }
 
+/* Scrollbar styling */
+.col-platform::-webkit-scrollbar,
+.conversation-list-scroll::-webkit-scrollbar,
+.col-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.col-platform::-webkit-scrollbar-track,
+.conversation-list-scroll::-webkit-scrollbar-track,
+.col-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.col-platform::-webkit-scrollbar-thumb,
+.conversation-list-scroll::-webkit-scrollbar-thumb,
+.col-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.col-platform::-webkit-scrollbar-thumb:hover,
+.conversation-list-scroll::-webkit-scrollbar-thumb:hover,
+.col-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Firefox scrollbar */
+.col-platform,
+.conversation-list-scroll,
+.col-content {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
 /* Column 3: Content */
 .col-content {
   flex: 1;
@@ -360,12 +394,13 @@
 }
 
 .markdown-body pre {
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: #f6f6f6;
+  color: #24292e;
   border-radius: 8px;
   overflow: hidden;
   margin: 12px 0;
   padding: 16px;
+  border: 1px solid #e5e5e5;
 }
 
 .markdown-body pre code {
