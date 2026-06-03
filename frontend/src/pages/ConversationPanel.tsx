@@ -225,13 +225,13 @@ export default function ConversationPanel() {
           >
             <span className="platform-icon"><PlatformIcon platform="" size={14} /></span>
             <span className="platform-label">全部</span>
-            <span className="platform-count">{convs.length}</span>
+            {!selectedPlatform && <span className="platform-count">{convs.length}</span>}
           </div>
           {platformOptions.map((opt) => {
             const selected = selectedPlatform === opt.value
-            const count = isSearch
-              ? searchResults.filter(c => c.platform === opt.value).length
-              : convs.filter(c => c.platform === opt.value).length
+            const count = !selectedPlatform
+              ? convs.filter(c => c.platform === opt.value).length
+              : undefined
             return (
               <div
                 key={opt.value}
@@ -240,7 +240,7 @@ export default function ConversationPanel() {
               >
                 <span className="platform-icon"><PlatformIcon platform={opt.value} size={14} /></span>
                 <span className="platform-label">{opt.label}</span>
-                <span className="platform-count">{count}</span>
+                {count !== undefined && <span className="platform-count">{count}</span>}
               </div>
             )
           })}

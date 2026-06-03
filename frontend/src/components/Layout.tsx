@@ -11,39 +11,47 @@ import {
 import { Input } from 'antd'
 import { useAuthStore } from '../stores/authStore'
 
-// Simple SVG platform icons
+// Platform icons approximating real logos
 function ChatGPTIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="10" fill="#10a37f" fillOpacity="0.15" stroke="#10a37f" strokeWidth="1.5" />
-      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="#10a37f" fontWeight="700">C</text>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="32" height="32" rx="6" fill="#10a37f" fillOpacity="0.1" />
+      <path d="M16 4C9.37 4 4 9.37 4 16s5.37 12 12 12c1.3 0 2.3-.6 2.8-1.5l.2-.4c.3-.6.5-1.2.5-1.8 0-1.1-.9-2-2-2h-.5c-.5 0-1 .2-1.4.5-.4.3-.9.4-1.4.3-3.5-.7-6.2-3.7-6.2-7.3 0-3.7 2.9-6.7 6.5-7.1.5 0 1 .1 1.5.4.4.2.8.3 1.3.3h.7c1.1 0 2-.9 2-2 0-.7-.2-1.3-.5-1.8L19.8 4.5C19.3 4.6 18.3 4 16 4z" fill="#10a37f" />
     </svg>
   )
 }
 
 function GeminiIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="10" fill="#4285f4" fillOpacity="0.15" stroke="#4285f4" strokeWidth="1.5" />
-      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="#4285f4" fontWeight="700">G</text>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="32" height="32" rx="6" fill="#4285f4" fillOpacity="0.1" />
+      <path d="M16 6l3.5 5L16 14.5 12.5 11 16 6z" fill="#4285f4" />
+      <path d="M21.5 11L26 16l-4.5 5-3.5-5L21.5 11z" fill="#ea4335" />
+      <path d="M16 17.5L19.5 21 16 26l-3.5-5L16 17.5z" fill="#34a853" />
+      <path d="M10.5 11L14 16l-3.5 5L6 16l4.5-5z" fill="#fbbc04" />
     </svg>
   )
 }
 
 function TongyiIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="10" fill="#722ed1" fillOpacity="0.15" stroke="#722ed1" strokeWidth="1.5" />
-      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="#722ed1" fontWeight="700">Q</text>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="32" height="32" rx="6" fill="#722ed1" fillOpacity="0.1" />
+      <circle cx="12" cy="11" r="4.5" fill="none" stroke="#722ed1" strokeWidth="1.8" />
+      <path d="M8 22c0-3.3 1.8-5 4-5s4 1.7 4 5" stroke="#722ed1" strokeWidth="1.8" strokeLinecap="round" fill="none" />
+      <path d="M20 8v10M22 10l-4 4M22 10l-4-2" stroke="#722ed1" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   )
 }
 
 function DoubaoIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="10" fill="#fa541c" fillOpacity="0.15" stroke="#fa541c" strokeWidth="1.5" />
-      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="#fa541c" fontWeight="700">D</text>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="32" height="32" rx="6" fill="#fa541c" fillOpacity="0.1" />
+      <path d="M16 7c-5 0-9 3.5-9 8.5 0 3.5 2 6.5 5 7.8V27c0 .6.4 1 1 1h3c.6 0 1-.4 1-1v-2c3-1.3 5-4.3 5-7.8C22 10.5 18 7 16 7z" fill="#fa541c" />
+      <circle cx="13.5" cy="15" r="1.2" fill="#fff" />
+      <circle cx="18.5" cy="15" r="1.2" fill="#fff" />
+      <path d="M14.5 17.5c.5.8 1.5 1.3 1.5 1.3s1-.5 1.5-1.3" stroke="#fff" strokeWidth="1" strokeLinecap="round" fill="none" />
     </svg>
   )
 }
