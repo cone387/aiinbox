@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   MessageOutlined,
@@ -88,6 +88,7 @@ export default function Layout() {
     const p = window.location.pathname
     return p === '/' ? '/' : `/${p.split('/')[1]}`
   })
+  const navigatingRef = useRef(false)
 
   const navItems = [
     { key: '/stats', icon: <BarChartOutlined />, label: '统计' },
@@ -99,16 +100,20 @@ export default function Layout() {
     if (key === 'logout') {
       logout()
     } else {
+      navigatingRef.current = true
       setActiveNav(key)
       navigate(key)
+      // Reset ref after navigation settles
+      setTimeout(() => { navigatingRef.current = false }, 100)
     }
   }
 
-  // Sync activeNav with URL changes
+  // Sync activeNav with URL changes (skip right after a nav click)
   useEffect(() => {
+    if (navigatingRef.current) return
     const p = location.pathname
     const key = p === '/' ? '/' : `/${p.split('/')[1]}`
-    if (key !== activeNav) setActiveNav(key)
+    setActiveNav(prev => key !== prev ? key : prev)
   }, [location.pathname])
 
   return (
@@ -146,9 +151,7 @@ export default function Layout() {
             />
 
             <div
-              onClick={() => {
-                if (location.pathname !== '/') handleMenuClick('/')
-              }}
+              onClick={() => handleMenuClick('/')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
