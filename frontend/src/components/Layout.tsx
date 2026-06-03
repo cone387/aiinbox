@@ -11,7 +11,7 @@ import {
 import { Input } from 'antd'
 import { useAuthStore } from '../stores/authStore'
 
-// Platform icons from official favicons
+// ChatGPT logo from official favicon
 function ChatGPTIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 180 180" fill="none" style={{ flexShrink: 0 }}>
@@ -21,23 +21,18 @@ function ChatGPTIcon({ size = 16 }: { size?: number }) {
 }
 
 function GeminiIcon({ size = 16 }: { size?: number }) {
-  // Google Gemini logo - 4-pointed star with official colors
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      {/* Top point - blue */}
-      <path d="M12 3l-3 5h6l-3-5z" fill="#4285f4" />
-      {/* Right point - red */}
-      <path d="M21 12l-5-3v6l5-3z" fill="#ea4335" />
-      {/* Bottom point - green */}
-      <path d="M12 21l-3-5h6l-3 5z" fill="#34a853" />
-      {/* Left point - yellow */}
-      <path d="M3 12l5-3v6l-5-3z" fill="#fbbc04" />
-      {/* Center diamond */}
-      <rect x="10" y="10" width="4" height="4" rx="0.5" fill="#4285f4" />
+      <path d="M12 2L8 7h8l-4-5z" fill="#4285f4" />
+      <path d="M22 12l-5-4v8l5-4z" fill="#ea4335" />
+      <path d="M12 22l-4-5h8l-4 5z" fill="#34a853" />
+      <path d="M2 12l5-4v8l-5-4z" fill="#fbbc04" />
+      <rect x="10" y="10" width="4" height="4" fill="#4285f4" />
     </svg>
   )
 }
 
+// Tongyi icon from official favicon
 function TongyiIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 51 51" fill="none" style={{ flexShrink: 0 }}>
@@ -52,17 +47,11 @@ function TongyiIcon({ size = 16 }: { size?: number }) {
   )
 }
 
+const DOUBAO_AVATAR = 'https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/web/doubao_avatar.png'
+
 function DoubaoIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <rect width="24" height="24" rx="6" fill="#FF6B6B" fillOpacity="0.15" />
-      {/* Simplified Doubao bean mascot */}
-      <ellipse cx="12" cy="12.5" rx="5.5" ry="6.5" fill="#FF6B6B" />
-      <circle cx="10" cy="11.5" r="1.8" fill="#fff" />
-      <circle cx="14" cy="11.5" r="1.8" fill="#fff" />
-      <circle cx="10" cy="11.5" r="0.9" fill="#1a1a2e" />
-      <circle cx="14" cy="11.5" r="0.9" fill="#1a1a2e" />
-    </svg>
+    <img src={DOUBAO_AVATAR} alt="豆包" style={{ width: size, height: size, borderRadius: '20%', flexShrink: 0 }} />
   )
 }
 
