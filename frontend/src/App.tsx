@@ -6,7 +6,6 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import Authorize from './pages/Authorize'
 import ConversationPanel from './pages/ConversationPanel'
-import Search from './pages/Search'
 import Stats from './pages/Stats'
 import Tokens from './pages/Tokens'
 import Settings from './pages/Settings'
@@ -34,7 +33,6 @@ function App() {
           >
             <Route index element={<ConversationPanel />} />
             <Route path="conversations/:id" element={<ConversationPanel />} />
-            <Route path="search" element={<Search />} />
             <Route path="stats" element={<Stats />} />
             <Route path="tokens" element={<Tokens />} />
             <Route path="settings" element={<Settings />} />

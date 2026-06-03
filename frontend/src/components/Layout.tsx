@@ -2,7 +2,6 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Layout as AntLayout, Menu } from 'antd'
 import {
   MessageOutlined,
-  SearchOutlined,
   BarChartOutlined,
   KeyOutlined,
   SettingOutlined,
@@ -19,7 +18,6 @@ export default function Layout() {
 
   const menuItems = [
     { key: '/', icon: <MessageOutlined />, label: '\u5BF9\u8BDD' },
-    { key: '/search', icon: <SearchOutlined />, label: '\u641C\u7D22' },
     { key: '/stats', icon: <BarChartOutlined />, label: '\u7EDF\u8BA1' },
     { key: '/tokens', icon: <KeyOutlined />, label: 'API Tokens' },
     { key: '/settings', icon: <SettingOutlined />, label: '\u8BBE\u7F6E' },
@@ -50,7 +48,7 @@ export default function Layout() {
           style={{ borderRight: 0 }}
         />
       </Sider>
-      <Content style={{ padding: '24px', backgroundColor: '#ffffff' }}>
+      <Content style={{ padding: 0, backgroundColor: '#ffffff' }}>
         <Outlet />
       </Content>
     </AntLayout>
