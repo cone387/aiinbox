@@ -6,6 +6,9 @@ const client = axios.create({
   baseURL: `${API_BASE}/api/v1`,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
+  paramsSerializer: {
+    indexes: null,
+  },
 })
 
 // Request interceptor: inject auth token
