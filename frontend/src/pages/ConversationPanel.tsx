@@ -28,6 +28,8 @@ export default function ConversationPanel() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [apiTotal, setApiTotal] = useState(0)
+  const [platformCounts, setPlatformCounts] = useState<Record<string, number>>({})
   const [params, setParams] = useState<ListParams>({
     page: 1,
     page_size: 30,
@@ -58,7 +60,23 @@ export default function ConversationPanel() {
       } else {
         setConvs(result.items)
       }
+      setApiTotal(result.total)
       setHasMore(page < result.total_pages)
+      // Update platform counts from "all" view loads
+      if (!params.platform || params.platform.length === 0) {
+        if (!append) setPlatformCounts({})
+        const counts = result.items.reduce<Record<string, number>>((acc, c) => {
+          acc[c.platform] = (acc[c.platform] || 0) + 1
+          return acc
+        }, {})
+        setPlatformCounts(prev => {
+          const merged = { ...prev }
+          for (const [k, v] of Object.entries(counts)) {
+            merged[k] = (merged[k] || 0) + v
+          }
+          return merged
+        })
+      }
     } catch {
       // Error handled by interceptor
     }
@@ -225,13 +243,11 @@ export default function ConversationPanel() {
           >
             <span className="platform-icon"><PlatformIcon platform="" size={14} /></span>
             <span className="platform-label">全部</span>
-            {!selectedPlatform && <span className="platform-count">{convs.length}</span>}
+            <span className="platform-count">{apiTotal || convs.length}</span>
           </div>
           {platformOptions.map((opt) => {
             const selected = selectedPlatform === opt.value
-            const count = !selectedPlatform
-              ? convs.filter(c => c.platform === opt.value).length
-              : undefined
+            const count = platformCounts[opt.value] ?? 0
             return (
               <div
                 key={opt.value}
@@ -240,7 +256,7 @@ export default function ConversationPanel() {
               >
                 <span className="platform-icon"><PlatformIcon platform={opt.value} size={14} /></span>
                 <span className="platform-label">{opt.label}</span>
-                {count !== undefined && <span className="platform-count">{count}</span>}
+                <span className="platform-count">{count}</span>
               </div>
             )
           })}

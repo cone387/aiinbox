@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   MessageOutlined,
@@ -84,11 +84,12 @@ export default function Layout() {
   const location = useLocation()
   const logout = useAuthStore((s) => s.logout)
   const [searchKeyword, setSearchKeyword] = useState('')
-  const [activeNav, setActiveNav] = useState(() => {
-    const p = window.location.pathname
-    return p === '/' ? '/' : `/${p.split('/')[1]}`
-  })
-  const navigatingRef = useRef(false)
+
+  // Derive activeNav purely from React Router's location — no state, no stale sync
+  const activeNav = (() => {
+    const p = location.pathname
+    return p === '/' || p.startsWith('/conversations') ? '/' : `/${p.split('/')[1]}`
+  })()
 
   const navItems = [
     { key: '/stats', icon: <BarChartOutlined />, label: '统计' },
@@ -100,21 +101,9 @@ export default function Layout() {
     if (key === 'logout') {
       logout()
     } else {
-      navigatingRef.current = true
-      setActiveNav(key)
       navigate(key)
-      // Reset ref after navigation settles
-      setTimeout(() => { navigatingRef.current = false }, 100)
     }
   }
-
-  // Sync activeNav with URL changes (skip right after a nav click)
-  useEffect(() => {
-    if (navigatingRef.current) return
-    const p = location.pathname
-    const key = p === '/' ? '/' : `/${p.split('/')[1]}`
-    setActiveNav(prev => key !== prev ? key : prev)
-  }, [location.pathname])
 
   return (
     <LayoutContext.Provider value={{ searchKeyword, setSearchKeyword }}>
