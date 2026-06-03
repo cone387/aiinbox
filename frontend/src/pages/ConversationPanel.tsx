@@ -60,7 +60,10 @@ export default function ConversationPanel() {
       } else {
         setConvs(result.items)
       }
-      setApiTotal(result.total)
+      setApiTotal(prev => {
+        const isAll = !params.platform || params.platform.length === 0
+        return isAll ? result.total : prev
+      })
       setHasMore(page < result.total_pages)
       // Update platform counts from "all" view loads
       if (!params.platform || params.platform.length === 0) {
@@ -273,6 +276,17 @@ export default function ConversationPanel() {
         <div ref={listRef} className="conversation-list-scroll" onScroll={handleScroll}>
           {activeLoading ? (
             <div style={{ textAlign: 'center', padding: '24px' }}><Spin size="small" /></div>
+          ) : activeItems.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">📭</div>
+              <div className="empty-state-text">
+                {isSearch
+                  ? `没有找到包含 "${searchKeyword}" 的对话`
+                  : selectedPlatform
+                    ? `${platformOptions.find(o => o.value === selectedPlatform)?.label || selectedPlatform} 暂无对话`
+                    : '暂无对话'}
+              </div>
+            </div>
           ) : (
             <>
               {activeItems.map(conv => (
@@ -307,6 +321,16 @@ export default function ConversationPanel() {
       <div className="col-content">
         {convDetail ? (
           <ConversationDetailContent conv={convDetail} />
+        ) : activeItems.length === 0 && !activeLoading ? (
+          <div className="panel-empty">
+            <div className="panel-empty-text">
+              {isSearch
+                ? `没有搜索到 "${searchKeyword}"`
+                : selectedPlatform
+                  ? `${platformOptions.find(o => o.value === selectedPlatform)?.label} 暂无对话`
+                  : '选择平台中的对话开始'}
+            </div>
+          </div>
         ) : (
           <div className="panel-empty">
             <div className="panel-empty-text">选择一个对话开始</div>
