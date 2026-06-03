@@ -36,8 +36,8 @@ export default function Layout() {
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider width={200} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
-        <div style={{ padding: '16px', fontWeight: 600, fontSize: '16px', textAlign: 'center' }}>
+      <Sider width={200} collapsible collapsedWidth={56} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
+        <div style={{ padding: '16px', fontWeight: 600, fontSize: '16px', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden' }}>
           AI Inbox
         </div>
         <Menu
