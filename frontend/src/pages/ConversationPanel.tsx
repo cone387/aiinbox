@@ -16,11 +16,19 @@ const platformOptions = [
   { value: 'doubao', label: '豆包' },
 ]
 
+const CollapseIcon = ({ size = 18 }: { size?: number }) => (
+  <svg viewBox="0 0 1024 1024" width={size} height={size} fill="currentColor">
+    <path d="M862.037333 171.093333A85.333333 85.333333 0 0 1 938.666667 256v512a85.333333 85.333333 0 0 1-76.629334 84.906667L853.333333 853.333333H170.666667a85.333333 85.333333 0 0 1-85.333334-85.333333V256a85.333333 85.333333 0 0 1 85.333334-85.333333h682.666666l8.704 0.426666zM170.666667 230.4a25.6 25.6 0 0 0-25.6 25.6v512a25.6 25.6 0 0 0 25.6 25.6h183.466666V230.4H170.666667z m243.2 563.2H853.333333a25.6 25.6 0 0 0 25.6-25.6V256a25.6 25.6 0 0 0-25.6-25.6H413.866667v563.2z" />
+  </svg>
+)
+
 export default function ConversationPanel() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { searchKeyword } = useLayout()
   const PlatformIcon = usePlatformIcon()
+  const [platformCollapsed, setPlatformCollapsed] = useState(true)
+  const [listCollapsed, setListCollapsed] = useState(false)
 
   // List state
   const [convs, setConvs] = useState<Conversation[]>([])
@@ -236,8 +244,34 @@ export default function ConversationPanel() {
   return (
     <div className="conversation-panel">
       {/* Column 1: Platform */}
-      <div className="col-platform">
-        <div className="col-title">平台</div>
+      <div className={`col-platform ${platformCollapsed ? 'collapsed' : ''}`}>
+        <div className="col-title">
+          {!platformCollapsed && <span>平台</span>}
+          <button className="sidebar-toggle-btn" onClick={() => setPlatformCollapsed(!platformCollapsed)} title={platformCollapsed ? '展开平台' : '折叠平台'}>
+            <CollapseIcon size={16} />
+          </button>
+        </div>
+        {platformCollapsed ? (
+        <div className="platform-list-collapsed">
+          <div
+            className={`platform-icon-item ${!selectedPlatform ? 'active' : ''}`}
+            onClick={() => selectPlatform(undefined)}
+            title="全部"
+          >
+            <PlatformIcon platform="" size={16} />
+          </div>
+          {platformOptions.map((opt) => (
+            <div
+              key={opt.value}
+              className={`platform-icon-item ${selectedPlatform === opt.value ? 'active' : ''}`}
+              onClick={() => selectPlatform(opt.value)}
+              title={opt.label}
+            >
+              <PlatformIcon platform={opt.value} size={16} />
+            </div>
+          ))}
+        </div>
+        ) : (
         <div className="platform-list">
           {/* 全部 */}
           <div
@@ -264,9 +298,11 @@ export default function ConversationPanel() {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* Column 2: Conversation List */}
+      {!listCollapsed && (
       <div className="col-list">
         {isSearch && searchResults.length > 0 && (
           <div className="search-info">
@@ -296,9 +332,11 @@ export default function ConversationPanel() {
                   className={`conv-list-item ${conv.id === selectedId ? 'active' : ''}`}
                   onClick={() => handleSelect(conv.id)}
                 >
+                  {!selectedPlatform && (
                   <span className="conv-list-icon">
                     <PlatformIcon platform={conv.platform} size={14} />
                   </span>
+                  )}
                   <div className="conv-list-body">
                     <span className="conv-list-title">{conv.title || 'Untitled'}</span>
                     <span className="conv-list-meta">
@@ -316,11 +354,19 @@ export default function ConversationPanel() {
           )}
         </div>
       </div>
+      )}
 
       {/* Column 3: Content */}
       <div className="col-content">
+        {listCollapsed && !convDetail && (
+          <div className="content-toggle-bar">
+            <button className="sidebar-toggle-btn" onClick={() => setListCollapsed(false)} title="展开对话列表">
+              <CollapseIcon size={18} />
+            </button>
+          </div>
+        )}
         {convDetail ? (
-          <ConversationDetailContent conv={convDetail} />
+          <ConversationDetailContent conv={convDetail} listCollapsed={listCollapsed} onToggleList={() => setListCollapsed(!listCollapsed)} />
         ) : activeItems.length === 0 && !activeLoading ? (
           <div className="panel-empty">
             <div className="panel-empty-text">

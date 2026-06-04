@@ -30,6 +30,15 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	// Resolve relative SQLite DSN to be relative to the executable's directory,
+	// so the server always finds the same database regardless of the working directory.
+	if cfg.Database.Driver == "sqlite" && !filepath.IsAbs(cfg.Database.DSN) {
+		exePath, err := os.Executable()
+		if err == nil {
+			cfg.Database.DSN = filepath.Join(filepath.Dir(exePath), cfg.Database.DSN)
+		}
+	}
+
 	// Set Gin mode
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
