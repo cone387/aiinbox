@@ -215,7 +215,7 @@ func (h *ConversationHandler) MarkRead(c *gin.Context) {
 	now := time.Now()
 	result := h.DB.Model(&models.Conversation{}).
 		Where("user_id = ? AND id = ?", userID, id).
-		Update("last_read_at", &now)
+		UpdateColumn("last_read_at", &now)
 
 	if result.RowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "conversation not found"})

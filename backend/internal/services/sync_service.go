@@ -68,16 +68,7 @@ func (s *SyncService) syncConversation(userID uint, req *dto.ConversationSync) (
 		return nil, err
 	}
 
-	// Update if newer
-	if req.UpdatedAt.After(existing.UpdatedAt) {
-		return s.updateConversation(&existing, req)
-	}
-
-	return &dto.SyncResult{
-		Success:        true,
-		ConversationID: req.ConversationID,
-		Action:         "skipped",
-	}, nil
+	return s.updateConversation(&existing, req)
 }
 
 func (s *SyncService) createConversation(userID uint, req *dto.ConversationSync) (*dto.SyncResult, error) {
@@ -123,9 +114,6 @@ func (s *SyncService) createConversation(userID uint, req *dto.ConversationSync)
 }
 
 func (s *SyncService) updateConversation(existing *models.Conversation, req *dto.ConversationSync) (*dto.SyncResult, error) {
-	existing.Title = req.Title
-	existing.UpdatedAt = req.UpdatedAt
-
 	// Incremental sync: find existing message timestamps to avoid duplicates
 	var existingTimestamps []time.Time
 	s.DB.Model(&models.Message{}).Where("conv_id = ?", existing.ID).Pluck("timestamp", &existingTimestamps)
@@ -153,12 +141,21 @@ func (s *SyncService) updateConversation(existing *models.Conversation, req *dto
 		if err := s.DB.CreateInBatches(newMessages, 100).Error; err != nil {
 			return nil, err
 		}
-		existing.SyncedAt = time.Now()
 	}
 
-	existing.MessageCount = len(existingTimestamps) + len(newMessages)
+	// Update conversation metadata without triggering GORM's auto-update of updated_at
+	updates := map[string]interface{}{
+		"title":         req.Title,
+		"message_count": len(existingTimestamps) + len(newMessages),
+	}
+	if len(newMessages) > 0 {
+		updates["synced_at"] = time.Now()
+	}
+	if req.UpdatedAt.After(existing.UpdatedAt) {
+		updates["updated_at"] = req.UpdatedAt
+	}
 
-	if err := s.DB.Save(existing).Error; err != nil {
+	if err := s.DB.Model(existing).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 
