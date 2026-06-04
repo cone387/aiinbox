@@ -224,3 +224,23 @@ func (h *ConversationHandler) MarkRead(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
+
+// MarkAllRead marks all unread conversations as read, optionally scoped to a platform.
+func (h *ConversationHandler) MarkAllRead(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var req struct {
+		Platform string `json:"platform"`
+	}
+	c.ShouldBindJSON(&req)
+
+	now := time.Now()
+	query := h.DB.Model(&models.Conversation{}).
+		Where("user_id = ? AND (last_read_at IS NULL OR synced_at > last_read_at)", userID)
+	if req.Platform != "" {
+		query = query.Where("platform = ?", req.Platform)
+	}
+	query.UpdateColumn("last_read_at", &now)
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}

@@ -145,8 +145,10 @@ func (s *SyncService) updateConversation(existing *models.Conversation, req *dto
 
 	// Update conversation metadata without triggering GORM's auto-update of updated_at
 	updates := map[string]interface{}{
-		"title":         req.Title,
 		"message_count": len(existingTimestamps) + len(newMessages),
+	}
+	if req.Title != "" && req.Title != existing.Title {
+		updates["title"] = req.Title
 	}
 	if len(newMessages) > 0 {
 		updates["synced_at"] = time.Now()

@@ -143,6 +143,7 @@ func main() {
 		protected.GET("/conversations/:id", convHandler.GetConversation)
 		protected.GET("/conversations/:id/messages", convHandler.GetMessages)
 		protected.POST("/conversations/:id/read", convHandler.MarkRead)
+		protected.POST("/conversations/read-all", convHandler.MarkAllRead)
 		protected.DELETE("/conversations", convHandler.BatchDelete)
 
 		// Search routes

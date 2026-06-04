@@ -128,7 +128,7 @@ export class ChatGPTAdapter extends PlatformAdapter {
       id: this.generateId(),
       platform: this.platform,
       conversationId: conversationId || this.generateId(),
-      title: title || dedupedMessages[0]?.content.slice(0, 50) || 'Untitled',
+      title: title || '',
       messages: dedupedMessages.map((m) =>
         this.createMessage(this.mapRole(m.role), m.content, m.timestamp, isComplete)
       ),

@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Spin } from 'antd'
-import { getConversation, listConversations, ListParams } from '../api/conversations'
+import { getConversation, listConversations, ListParams, batchDelete } from '../api/conversations'
 import { search as searchApi, SearchParams as ApiSearchParams } from '../api/search'
-import { getSyncStatus, markRead, PlatformSyncStatus } from '../api/sync'
+import { getSyncStatus, markRead, markAllRead, PlatformSyncStatus } from '../api/sync'
 import { Conversation, ConversationDetail } from '../types'
 import dayjs from 'dayjs'
 import ConversationDetailContent from './ConversationDetailContent'
@@ -16,6 +16,28 @@ const platformOptions = [
   { value: 'tongyi', label: '通义千问' },
   { value: 'doubao', label: '豆包' },
 ]
+
+function getPlatformUrl(platform: string, conversationId: string): string | null {
+  switch (platform) {
+    case 'chatgpt': return `https://chatgpt.com/c/${conversationId}`
+    case 'gemini': return `https://gemini.google.com/app/${conversationId}`
+    case 'tongyi': return `https://tongyi.aliyun.com/qianwen/chat/${conversationId}`
+    case 'doubao': return `https://www.doubao.com/chat/${conversationId}`
+    default: return null
+  }
+}
+
+const DeleteIcon = ({ size = 14 }: { size?: number }) => (
+  <svg viewBox="0 0 1024 1024" width={size} height={size} fill="currentColor">
+    <path d="M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h-8v72h72v-80c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v80h72v-72z M864 256H160c-17.7 0-32 14.3-32 32v32c0 4.4 3.6 8 8 8h60.4l24.7 523c1.6 34.1 29.8 61 63.9 61h454c34.2 0 62.3-26.8 63.9-61l24.7-523H888c4.4 0 8-3.6 8-8v-32c0-17.7-14.3-32-32-32zM731.3 840H292.7l-24.2-512h487l-24.2 512z" />
+  </svg>
+)
+
+const ExternalLinkIcon = ({ size = 14 }: { size?: number }) => (
+  <svg viewBox="0 0 1024 1024" width={size} height={size} fill="currentColor">
+    <path d="M864 160h-192c-17.7 0-32 14.3-32 32s14.3 32 32 32h114.7L521.4 489.4c-12.5 12.5-12.5 32.8 0 45.3 6.2 6.2 14.4 9.4 22.6 9.4s16.4-3.1 22.6-9.4L832 269.3V384c0 17.7 14.3 32 32 32s32-14.3 32-32V192c0-17.7-14.3-32-32-32z M736 512c-17.7 0-32 14.3-32 32v256H256V352h256c17.7 0 32-14.3 32-32s-14.3-32-32-32H224c-35.3 0-64 28.7-64 64v480c0 35.3 28.7 64 64 64h480c35.3 0 64-28.7 64-64V544c0-17.7-14.3-32-32-32z" />
+  </svg>
+)
 
 const CollapseIcon = ({ size = 18 }: { size?: number }) => (
   <svg viewBox="0 0 1024 1024" width={size} height={size} fill="currentColor">
@@ -242,6 +264,32 @@ export default function ConversationPanel() {
     }).catch(() => {})
   }
 
+  function handleMarkAllRead() {
+    markAllRead(selectedPlatform).then(() => {
+      setConvs(prev => prev.map(c => ({ ...c, has_unread: false })))
+      getSyncStatus().then(setSyncStatuses).catch(() => {})
+    }).catch(() => {})
+  }
+
+  function handleDelete(e: React.MouseEvent, convId: number) {
+    e.stopPropagation()
+    if (!window.confirm('确定删除这个对话吗？')) return
+    batchDelete([convId]).then(() => {
+      setConvs(prev => prev.filter(c => c.id !== convId))
+      if (selectedId === convId) {
+        setSelectedId(null)
+        setConvDetail(null)
+      }
+      getSyncStatus().then(setSyncStatuses).catch(() => {})
+    }).catch(() => {})
+  }
+
+  function handleOpenOriginal(e: React.MouseEvent, conv: Conversation) {
+    e.stopPropagation()
+    const url = getPlatformUrl(conv.platform, conv.conversation_id)
+    if (url) window.open(url, '_blank')
+  }
+
   function selectPlatform(platform: string | undefined) {
     setParams(prev => ({ ...prev, platform: platform ? [platform] : undefined, page: 1 }))
     setSelectedId(null)
@@ -322,11 +370,18 @@ export default function ConversationPanel() {
       {/* Column 2: Conversation List */}
       {!listCollapsed && (
       <div className="col-list">
-        {isSearch && searchResults.length > 0 && (
-          <div className="search-info">
-            搜索 "{searchKeyword}" — {searchResults.length} 个对话
-          </div>
-        )}
+        <div className="col-list-header">
+          {isSearch && searchResults.length > 0 ? (
+            <span className="search-info">搜索 "{searchKeyword}" — {searchResults.length} 个对话</span>
+          ) : (
+            <span className="col-list-title-text">对话</span>
+          )}
+          {getUnreadCount(selectedPlatform) > 0 && (
+            <button className="mark-all-read-btn" onClick={handleMarkAllRead} title="全部标记已读">
+              全部已读
+            </button>
+          )}
+        </div>
         <div ref={listRef} className="conversation-list-scroll" onScroll={handleScroll}>
           {activeLoading ? (
             <div style={{ textAlign: 'center', padding: '24px' }}><Spin size="small" /></div>
@@ -347,7 +402,7 @@ export default function ConversationPanel() {
                 <div
                   key={conv.id}
                   data-id={conv.id}
-                  className={`conv-list-item ${conv.id === selectedId ? 'active' : ''} ${conv.has_unread ? 'unread' : ''}`}
+                  className={`conv-list-item ${conv.id === selectedId ? 'active' : ''}`}
                   onClick={() => handleSelect(conv.id)}
                 >
                   {!selectedPlatform && (
@@ -360,6 +415,15 @@ export default function ConversationPanel() {
                     <span className="conv-list-meta">
                       {conv.message_count} 条 · {dayjs(conv.created_at).format('MM-DD HH:mm')}
                     </span>
+                  </div>
+                  {conv.has_unread && <span className="conv-unread-dot" />}
+                  <div className="conv-list-actions">
+                    <button className="conv-action-btn" onClick={(e) => handleOpenOriginal(e, conv)} title="跳转原对话">
+                      <ExternalLinkIcon size={13} />
+                    </button>
+                    <button className="conv-action-btn conv-action-delete" onClick={(e) => handleDelete(e, conv.id)} title="删除">
+                      <DeleteIcon size={13} />
+                    </button>
                   </div>
                 </div>
               ))}

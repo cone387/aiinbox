@@ -179,21 +179,14 @@ html, body {
   padding: 0 4px;
 }
 
-.conv-list-item.unread .conv-list-title {
-  font-weight: 700;
-  color: #000;
-}
-
-.conv-list-item.unread::before {
-  content: '';
+.conv-unread-dot {
   position: absolute;
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 6px;
-  height: 6px;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #1677ff;
+  background: #ff4d4f;
 }
 
 /* Column 2: Conversation List */
@@ -206,13 +199,46 @@ html, body {
   overflow: hidden;
 }
 
-.search-info {
+.col-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 10px 16px;
-  font-size: 12px;
-  color: #999;
   border-bottom: 1px solid #f0f0f0;
   flex-shrink: 0;
   background: #fafafa;
+}
+
+.col-list-title-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #666;
+}
+
+.col-list-header .search-info {
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+}
+
+.mark-all-read-btn {
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  color: #1677ff;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.mark-all-read-btn:hover {
+  background: #e6f4ff;
+}
+
+.search-info {
+  font-size: 12px;
+  color: #999;
 }
 
 .conversation-list-scroll {
@@ -274,6 +300,48 @@ html, body {
   display: flex;
   justify-content: center;
   padding: 12px;
+}
+
+.conv-list-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.conv-list-item:hover .conv-list-actions {
+  opacity: 1;
+}
+
+.conv-list-item:hover .conv-unread-dot {
+  opacity: 0;
+}
+
+.conv-action-btn {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #999;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.conv-action-btn:hover {
+  background: #e8e8e8;
+  color: #666;
+}
+
+.conv-action-delete:hover {
+  color: #ff4d4f;
+  background: #fff1f0;
 }
 
 .empty-state {

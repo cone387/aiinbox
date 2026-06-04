@@ -14,3 +14,7 @@ export async function getSyncStatus(): Promise<PlatformSyncStatus[]> {
 export async function markRead(convId: number): Promise<void> {
   await client.post(`/conversations/${convId}/read`)
 }
+
+export async function markAllRead(platform?: string): Promise<void> {
+  await client.post('/conversations/read-all', platform ? { platform } : {})
+}
