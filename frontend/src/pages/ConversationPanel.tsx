@@ -75,6 +75,7 @@ export default function ConversationPanel() {
   const [searchHasMore, setSearchHasMore] = useState(true)
 
   const [convDetail, setConvDetail] = useState<ConversationDetail | null>(null)
+  const [wasUnread, setWasUnread] = useState(false)
   const [syncStatuses, setSyncStatuses] = useState<PlatformSyncStatus[]>([])
   const listRef = useRef<HTMLDivElement>(null)
   const loadingRef = useRef(false)
@@ -255,6 +256,8 @@ export default function ConversationPanel() {
   }
 
   function handleSelect(convId: number) {
+    const conv = convs.find(c => c.id === convId)
+    setWasUnread(conv?.has_unread ?? false)
     setSelectedId(convId)
     loadDetail(convId)
     navigate(`/conversations/${convId}`)
@@ -448,7 +451,7 @@ export default function ConversationPanel() {
           </div>
         )}
         {convDetail ? (
-          <ConversationDetailContent conv={convDetail} listCollapsed={listCollapsed} onToggleList={() => setListCollapsed(!listCollapsed)} />
+          <ConversationDetailContent conv={convDetail} listCollapsed={listCollapsed} onToggleList={() => setListCollapsed(!listCollapsed)} wasUnread={wasUnread} />
         ) : activeItems.length === 0 && !activeLoading ? (
           <div className="panel-empty">
             <div className="panel-empty-text">

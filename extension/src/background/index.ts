@@ -1,5 +1,7 @@
 import { getAdapterByPlatform } from '../adapters'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG } from '../types'
+import { saveConversation, getPending, markSynced, markFailed, getStats, clearSynced, CachedConversation } from '../storage/db'
+import { exportAsJSON } from '../storage/export'
 
 // Platform URL detection patterns
 const PLATFORM_PATTERNS: Record<string, string[]> = {
@@ -12,6 +14,7 @@ const PLATFORM_PATTERNS: Record<string, string[]> = {
 let config: ExtensionConfig = { ...DEFAULT_CONFIG }
 let isCollecting = false
 let cachedHealth = { server: true, auth: true }
+let lastSyncTime: string | null = null
 let initPromise: Promise<void>
 
 // Initialize
@@ -62,6 +65,7 @@ async function loadConfig(): Promise<void> {
     // Always start health check alarm if server is configured
     if (server?.url && server?.token) {
       startHealthCheck()
+      startSyncAlarm()
     }
   } catch (err) {
     console.error('[AI Inbox] Failed to load config:', err)
@@ -105,6 +109,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       checkServerHealth(server.url, server.token)
     }
   }
+  if (alarm.name === 'sync-pending') {
+    syncPendingConversations()
+  }
 })
 
 async function checkServerHealth(url: string, token?: string): Promise<{ server: boolean; auth: boolean }> {
@@ -134,6 +141,12 @@ async function checkServerHealth(url: string, token?: string): Promise<{ server:
   }
 
   cachedHealth = { server: serverOk, auth: authOk }
+
+  // Trigger sync when server is healthy
+  if (serverOk && authOk) {
+    syncPendingConversations()
+  }
+
   return cachedHealth
 }
 
@@ -204,55 +217,30 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           const conv = result.conversation
           console.log(`[AI Inbox] Parsed ${captureMode} from ${platform} (${conv.messages.length} messages, title: "${conv.title}", id: ${conv.conversationId})`)
 
-          // Direct upload to backend
-          const server = config.servers?.[config.activeServerIndex]
-          if (server?.url && server?.token) {
-            try {
-              const payload = {
-                conversations: [{
-                  platform: result.conversation.platform,
-                  conversation_id: result.conversation.conversationId,
-                  title: result.conversation.title,
-                  messages: result.conversation.messages.map(m => ({
-                    role: m.role,
-                    content: m.content,
-                    timestamp: m.timestamp,
-                    is_complete: m.isComplete,
-                  })),
-                  created_at: result.conversation.createdAt,
-                  updated_at: result.conversation.updatedAt,
-                }],
-              }
-
-              const response = await fetch(`${server.url}/api/v1/conversations/batch`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${server.token}`,
-                },
-                body: JSON.stringify(payload),
-              })
-
-              if (response.ok) {
-                const resp = await response.json().catch(() => ({}))
-                const action = resp.results?.[0]?.action || 'unknown'
-                console.log(`[AI Inbox] Uploaded ${captureMode} from ${platform} → ${server.url} (${action}, ${resp.created || 0} created, title: "${conv.title}")`)
-              } else if (response.status === 401) {
-                console.error(`[AI Inbox] Upload auth failed (401) for ${platform}`)
-                cachedHealth = { server: true, auth: false }
-                updateIcon('error')
-              } else {
-                const errText = await response.text()
-                console.error(`[AI Inbox] Upload failed: ${response.status} - ${errText}`)
-              }
-            } catch (err) {
-              console.error(`[AI Inbox] Upload error:`, err)
-              cachedHealth = { server: false, auth: false }
-              updateIcon('error')
-            }
-          } else {
-            console.log(`[AI Inbox] No server configured, skipping upload`)
+          // Cache first — save to IndexedDB before attempting upload
+          const cached: CachedConversation = {
+            id: conv.id,
+            platform: conv.platform,
+            conversationId: conv.conversationId,
+            title: conv.title,
+            messages: conv.messages,
+            createdAt: conv.createdAt,
+            updatedAt: conv.updatedAt,
+            captureMode: captureMode as 'turn' | 'history',
+            syncStatus: 'pending',
+            syncAttempts: 0,
+            cachedAt: new Date().toISOString(),
           }
+
+          try {
+            await saveConversation(cached)
+            console.log(`[AI Inbox] Cached ${captureMode} from ${platform} (id: ${conv.conversationId})`)
+          } catch (err) {
+            console.error(`[AI Inbox] Cache write failed:`, err)
+          }
+
+          // Attempt immediate upload
+          await uploadConversation(cached)
         } else if (message.body?.length > 100) {
           console.warn(`[AI Inbox] Parse failed for ${platform}: ${result.error}`)
         } else {
@@ -431,6 +419,30 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         break
       }
 
+      case 'GET_CACHE_STATS': {
+        const stats = await getStats()
+        sendResponse({ ...stats, lastSyncTime })
+        break
+      }
+
+      case 'EXPORT_DATA': {
+        const json = await exportAsJSON(message.filter)
+        sendResponse({ data: json })
+        break
+      }
+
+      case 'RETRY_FAILED': {
+        syncPendingConversations()
+        sendResponse({ ok: true })
+        break
+      }
+
+      case 'CLEAR_SYNCED': {
+        const deleted = await clearSynced()
+        sendResponse({ ok: true, deleted })
+        break
+      }
+
       default:
         sendResponse({ ok: false, error: 'unknown message type' })
     }
@@ -448,4 +460,72 @@ function updateIcon(status: 'active' | 'paused' | 'error'): void {
   }
   chrome.action.setBadgeBackgroundColor({ color: colors[status] })
   chrome.action.setBadgeText({ text: status === 'active' ? '' : status === 'paused' ? 'P' : '!' })
+}
+
+// Upload a cached conversation to the server
+async function uploadConversation(conv: CachedConversation): Promise<void> {
+  const server = config.servers?.[config.activeServerIndex]
+  if (!server?.url || !server?.token) {
+    await markFailed(conv.id, 'no_server_configured')
+    return
+  }
+
+  const payload = {
+    platform: conv.platform,
+    conversation_id: conv.conversationId,
+    title: conv.title,
+    messages: conv.messages.map(m => ({
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+    })),
+    created_at: conv.createdAt,
+    updated_at: conv.updatedAt,
+  }
+
+  try {
+    const resp = await fetch(`${server.url}/api/v1/conversations/sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + server.token,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (resp.ok) {
+      await markSynced(conv.id)
+      lastSyncTime = new Date().toISOString()
+      console.log(`[AI Inbox] Uploaded ${conv.platform}/${conv.conversationId}`)
+    } else {
+      const text = await resp.text().catch(() => '')
+      await markFailed(conv.id, `${resp.status} - ${text.slice(0, 100)}`)
+      console.warn(`[AI Inbox] Upload failed ${resp.status}: ${text.slice(0, 100)}`)
+    }
+  } catch (err) {
+    await markFailed(conv.id, String(err))
+    console.warn(`[AI Inbox] Upload error:`, err)
+  }
+}
+
+// Sync all pending/failed conversations
+async function syncPendingConversations(): Promise<void> {
+  const server = config.servers?.[config.activeServerIndex]
+  if (!server?.url || !server?.token) return
+  if (!cachedHealth.server || !cachedHealth.auth) return
+
+  const pending = await getPending()
+  if (pending.length === 0) return
+
+  console.log(`[AI Inbox] Syncing ${pending.length} pending conversations`)
+  for (const conv of pending) {
+    await uploadConversation(conv)
+  }
+  lastSyncTime = new Date().toISOString()
+}
+
+// Set up sync alarm
+function startSyncAlarm(): void {
+  chrome.alarms.create('sync-pending', { periodInMinutes: 2 })
 }

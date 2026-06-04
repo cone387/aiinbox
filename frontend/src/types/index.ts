@@ -9,6 +9,7 @@ export interface Conversation {
   created_at: string
   updated_at: string
   synced_at: string
+  last_read_at?: string | null
   has_unread?: boolean
 }
 

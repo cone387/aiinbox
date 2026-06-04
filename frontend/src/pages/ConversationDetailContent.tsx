@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ConversationDetail as ConvDetail } from '../types'
 import dayjs from 'dayjs'
 
@@ -19,10 +19,23 @@ interface Props {
   conv: ConvDetail
   listCollapsed: boolean
   onToggleList: () => void
+  wasUnread?: boolean
 }
 
-export default function ConversationDetailContent({ conv, listCollapsed, onToggleList }: Props) {
+export default function ConversationDetailContent({ conv, listCollapsed, onToggleList, wasUnread }: Props) {
   const [copied, setCopied] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const firstUnreadRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      if (wasUnread && firstUnreadRef.current) {
+        firstUnreadRef.current.scrollIntoView({ block: 'start' })
+      } else if (bottomRef.current) {
+        bottomRef.current.scrollIntoView({ block: 'end' })
+      }
+    })
+  }, [conv.id])
 
   function copyMessage(content: string) {
     navigator.clipboard.writeText(content)
@@ -79,8 +92,12 @@ export default function ConversationDetailContent({ conv, listCollapsed, onToggl
       </div>
 
       <div className="messages-container">
-        {conv.messages.map((msg) => (
-        <div key={msg.id} className={`message-row ${msg.role}`}>
+        {conv.messages.map((msg, idx) => {
+        const isFirstUnread = wasUnread && conv.last_read_at
+          ? idx === conv.messages.findIndex(m => m.timestamp > conv.last_read_at!)
+          : false
+        return (
+        <div key={msg.id} className={`message-row ${msg.role}`} ref={isFirstUnread ? firstUnreadRef : undefined}>
           <div className={`message-bubble ${msg.role}`}>
             <div className="message-content">
               {msg.role === 'user' ? (
@@ -97,7 +114,8 @@ export default function ConversationDetailContent({ conv, listCollapsed, onToggl
             </div>
           </div>
         </div>
-        ))}
+        )})}
+        <div ref={bottomRef} />
       </div>
     </div>
   )
@@ -123,6 +141,7 @@ function simpleMarkdown(text: string): string {
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
   // Blockquotes (consecutive lines)
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
+  html = html.replace(/^&gt;\s*$/gm, '')
   html = html.replace(/<\/blockquote>\n<blockquote>/g, '<br/>')
   // Horizontal rule
   html = html.replace(/^-{3,}$/gm, '<hr/>')

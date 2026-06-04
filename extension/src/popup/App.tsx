@@ -10,6 +10,7 @@ interface PopupState {
   authOk: boolean | null
   loading: boolean
   platformCounts: Record<string, number>
+  cacheStats: { total: number; pending: number; synced: number; failed: number; lastSyncTime: string | null }
 }
 
 const platformLabels: Record<Platform, string> = {
@@ -26,6 +27,18 @@ const platformUrls: Record<Platform, string> = {
   doubao: 'https://doubao.com',
 }
 
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  if (diffMs < 60000) return '刚刚'
+  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)} 分钟前`
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
 function App() {
   const [state, setState] = useState<PopupState>({
     status: 'paused',
@@ -36,6 +49,7 @@ function App() {
     authOk: null,
     loading: true,
     platformCounts: {},
+    cacheStats: { total: 0, pending: 0, synced: 0, failed: 0, lastSyncTime: null },
   })
 
   const configRef = useRef(state.config)
@@ -83,6 +97,40 @@ function App() {
     } catch {}
   }, [])
 
+  async function loadCacheStats() {
+    try {
+      const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
+      if (stats && typeof stats.total === 'number') {
+        setState((s) => ({ ...s, cacheStats: stats }))
+      }
+    } catch {}
+  }
+
+  async function handleExport() {
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'EXPORT_DATA' })
+      if (resp?.data) {
+        const blob = new Blob([resp.data], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `aiinbox-export-${new Date().toISOString().slice(0, 10)}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    } catch {}
+  }
+
+  async function handleRetryFailed() {
+    await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
+    setTimeout(loadCacheStats, 3000)
+  }
+
+  async function handleClearSynced() {
+    await chrome.runtime.sendMessage({ type: 'CLEAR_SYNCED' })
+    loadCacheStats()
+  }
+
   const loadData = useCallback(async () => {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' })
@@ -102,6 +150,7 @@ function App() {
       }))
 
       loadPlatformCounts(cfg)
+      loadCacheStats()
       doHealthCheck(cfg)
     } catch {
       setState((s) => ({ ...s, loading: false }))
@@ -275,6 +324,41 @@ function App() {
           })}
         </div>
       </div>
+
+      {/* Cache stats */}
+      {state.cacheStats.total > 0 && (
+        <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>本地缓存</div>
+            {state.cacheStats.lastSyncTime && (
+              <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                最近同步: {formatTime(state.cacheStats.lastSyncTime)}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '12px', fontSize: '12px', marginBottom: '6px' }}>
+            <span>共 {state.cacheStats.total}</span>
+            {state.cacheStats.pending > 0 && <span style={{ color: '#d97706' }}>待同步 {state.cacheStats.pending}</span>}
+            {state.cacheStats.synced > 0 && <span style={{ color: '#16a34a' }}>已同步 {state.cacheStats.synced}</span>}
+            {state.cacheStats.failed > 0 && <span style={{ color: '#ef4444' }}>失败 {state.cacheStats.failed}</span>}
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={handleExport} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid #e2e8f0', borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer' }}>
+              导出数据
+            </button>
+            {state.cacheStats.failed > 0 && (
+              <button onClick={handleRetryFailed} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid #e2e8f0', borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer', color: '#d97706' }}>
+                重试失败
+              </button>
+            )}
+            {state.cacheStats.synced > 0 && (
+              <button onClick={handleClearSynced} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid #e2e8f0', borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer', color: '#6b7280' }}>
+                清除已同步
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
