@@ -82,8 +82,22 @@ func (h *ConversationHandler) ListConversations(c *gin.Context) {
 
 	totalPages := int(math.Ceil(float64(total) / float64(pageSize)))
 
+	// Add has_unread computed field
+	type ConversationWithUnread struct {
+		models.Conversation
+		HasUnread bool `json:"has_unread"`
+	}
+	items := make([]ConversationWithUnread, 0, len(conversations))
+	for _, conv := range conversations {
+		hasUnread := conv.LastReadAt == nil || conv.SyncedAt.After(*conv.LastReadAt)
+		items = append(items, ConversationWithUnread{
+			Conversation: conv,
+			HasUnread:    hasUnread,
+		})
+	}
+
 	c.JSON(http.StatusOK, PaginatedResponse{
-		Items:      conversations,
+		Items:      items,
 		Total:      total,
 		Page:       page,
 		PageSize:   pageSize,
@@ -191,4 +205,22 @@ func (h *ConversationHandler) BatchDelete(c *gin.Context) {
 	result := h.DB.Where("id IN ? AND user_id = ?", convIDs, userID).Delete(&models.Conversation{})
 
 	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
+}
+
+// MarkRead marks a conversation as read.
+func (h *ConversationHandler) MarkRead(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	id := c.Param("id")
+
+	now := time.Now()
+	result := h.DB.Model(&models.Conversation{}).
+		Where("user_id = ? AND id = ?", userID, id).
+		Update("last_read_at", &now)
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found", "message": "conversation not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

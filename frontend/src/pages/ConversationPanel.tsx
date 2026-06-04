@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Spin } from 'antd'
 import { getConversation, listConversations, ListParams } from '../api/conversations'
 import { search as searchApi, SearchParams as ApiSearchParams } from '../api/search'
+import { getSyncStatus, markRead, PlatformSyncStatus } from '../api/sync'
 import { Conversation, ConversationDetail } from '../types'
 import dayjs from 'dayjs'
 import ConversationDetailContent from './ConversationDetailContent'
@@ -52,8 +53,19 @@ export default function ConversationPanel() {
   const [searchHasMore, setSearchHasMore] = useState(true)
 
   const [convDetail, setConvDetail] = useState<ConversationDetail | null>(null)
+  const [syncStatuses, setSyncStatuses] = useState<PlatformSyncStatus[]>([])
   const listRef = useRef<HTMLDivElement>(null)
   const loadingRef = useRef(false)
+
+  // Fetch sync status
+  useEffect(() => {
+    getSyncStatus().then(setSyncStatuses).catch(() => {})
+  }, [convs])
+
+  function getUnreadCount(platform?: string): number {
+    if (!platform) return syncStatuses.reduce((sum, s) => sum + s.unread_count, 0)
+    return syncStatuses.find(s => s.platform === platform)?.unread_count || 0
+  }
 
   // --- List API ---
   async function loadPage(page: number, append = false) {
@@ -224,6 +236,10 @@ export default function ConversationPanel() {
     setSelectedId(convId)
     loadDetail(convId)
     navigate(`/conversations/${convId}`)
+    markRead(convId).then(() => {
+      setConvs(prev => prev.map(c => c.id === convId ? { ...c, has_unread: false } : c))
+      getSyncStatus().then(setSyncStatuses).catch(() => {})
+    }).catch(() => {})
   }
 
   function selectPlatform(platform: string | undefined) {
@@ -259,6 +275,7 @@ export default function ConversationPanel() {
             title="全部"
           >
             <PlatformIcon platform="" size={16} />
+            {getUnreadCount() > 0 && <span className="unread-badge">{getUnreadCount()}</span>}
           </div>
           {platformOptions.map((opt) => (
             <div
@@ -268,6 +285,7 @@ export default function ConversationPanel() {
               title={opt.label}
             >
               <PlatformIcon platform={opt.value} size={16} />
+              {getUnreadCount(opt.value) > 0 && <span className="unread-badge">{getUnreadCount(opt.value)}</span>}
             </div>
           ))}
         </div>
@@ -280,7 +298,7 @@ export default function ConversationPanel() {
           >
             <span className="platform-icon"><PlatformIcon platform="" size={14} /></span>
             <span className="platform-label">全部</span>
-            <span className="platform-count">{apiTotal || convs.length}</span>
+            {getUnreadCount() > 0 ? <span className="unread-badge">{getUnreadCount()}</span> : <span className="platform-count">{apiTotal || convs.length}</span>}
           </div>
           {platformOptions.map((opt) => {
             const selected = selectedPlatform === opt.value
@@ -329,7 +347,7 @@ export default function ConversationPanel() {
                 <div
                   key={conv.id}
                   data-id={conv.id}
-                  className={`conv-list-item ${conv.id === selectedId ? 'active' : ''}`}
+                  className={`conv-list-item ${conv.id === selectedId ? 'active' : ''} ${conv.has_unread ? 'unread' : ''}`}
                   onClick={() => handleSelect(conv.id)}
                 >
                   {!selectedPlatform && (

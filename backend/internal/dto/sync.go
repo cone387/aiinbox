@@ -41,3 +41,9 @@ type SyncError struct {
 	ConversationID string `json:"conversation_id"`
 	Error          string `json:"error"`
 }
+
+type PlatformSyncStatus struct {
+	Platform     string     `json:"platform"`
+	LastSyncedAt *time.Time `json:"last_synced_at"`
+	UnreadCount  int        `json:"unread_count"`
+}

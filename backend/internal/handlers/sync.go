@@ -65,3 +65,17 @@ func (h *SyncHandler) BatchSync(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// GetSyncStatus returns per-platform sync status with unread counts.
+func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	statuses, err := h.SyncService.GetSyncStatus(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal_error",
+			"message": "failed to get sync status",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"platforms": statuses})
+}

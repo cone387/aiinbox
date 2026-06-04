@@ -112,6 +112,7 @@ func (s *SyncService) createConversation(userID uint, req *dto.ConversationSync)
 		return nil, err
 	}
 
+	s.updateSyncStatus(userID, req.Platform)
 	s.logSync(userID, &conv.ID, "created", "")
 
 	return &dto.SyncResult{
@@ -124,33 +125,44 @@ func (s *SyncService) createConversation(userID uint, req *dto.ConversationSync)
 func (s *SyncService) updateConversation(existing *models.Conversation, req *dto.ConversationSync) (*dto.SyncResult, error) {
 	existing.Title = req.Title
 	existing.UpdatedAt = req.UpdatedAt
-	existing.MessageCount = len(req.Messages)
-	existing.SyncedAt = time.Now()
+
+	// Incremental sync: find existing message timestamps to avoid duplicates
+	var existingTimestamps []time.Time
+	s.DB.Model(&models.Message{}).Where("conv_id = ?", existing.ID).Pluck("timestamp", &existingTimestamps)
+
+	tsSet := make(map[int64]bool, len(existingTimestamps))
+	for _, t := range existingTimestamps {
+		tsSet[t.UnixMilli()] = true
+	}
+
+	// Only insert messages that don't already exist
+	var newMessages []models.Message
+	for _, m := range req.Messages {
+		if !tsSet[m.Timestamp.UnixMilli()] {
+			newMessages = append(newMessages, models.Message{
+				ConvID:     existing.ID,
+				Role:       m.Role,
+				Content:    m.Content,
+				Timestamp:  m.Timestamp,
+				IsComplete: m.IsComplete,
+			})
+		}
+	}
+
+	if len(newMessages) > 0 {
+		if err := s.DB.CreateInBatches(newMessages, 100).Error; err != nil {
+			return nil, err
+		}
+		existing.SyncedAt = time.Now()
+	}
+
+	existing.MessageCount = len(existingTimestamps) + len(newMessages)
 
 	if err := s.DB.Save(existing).Error; err != nil {
 		return nil, err
 	}
 
-	// Replace messages
-	if err := s.DB.Where("conv_id = ?", existing.ID).Delete(&models.Message{}).Error; err != nil {
-		return nil, err
-	}
-
-	messages := make([]models.Message, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		messages = append(messages, models.Message{
-			ConvID:     existing.ID,
-			Role:       m.Role,
-			Content:    m.Content,
-			Timestamp:  m.Timestamp,
-			IsComplete: m.IsComplete,
-		})
-	}
-
-	if err := s.DB.CreateInBatches(messages, 100).Error; err != nil {
-		return nil, err
-	}
-
+	s.updateSyncStatus(existing.UserID, existing.Platform)
 	s.logSync(existing.UserID, &existing.ID, "updated", "")
 
 	return &dto.SyncResult{
@@ -168,4 +180,47 @@ func (s *SyncService) logSync(userID uint, convID *uint, action, errMsg string) 
 		ErrorMessage:   errMsg,
 	}
 	s.DB.Create(&log)
+}
+
+func (s *SyncService) updateSyncStatus(userID uint, platform string) {
+	now := time.Now()
+	var status models.SyncStatus
+	err := s.DB.Where("user_id = ? AND platform = ?", userID, platform).First(&status).Error
+	if err != nil {
+		s.DB.Create(&models.SyncStatus{
+			UserID:       userID,
+			Platform:     platform,
+			LastSyncedAt: now,
+		})
+	} else {
+		s.DB.Model(&status).Update("last_synced_at", now)
+	}
+}
+
+// GetSyncStatus returns per-platform sync status with unread counts.
+func (s *SyncService) GetSyncStatus(userID uint) ([]dto.PlatformSyncStatus, error) {
+	var statuses []models.SyncStatus
+	s.DB.Where("user_id = ?", userID).Find(&statuses)
+
+	platforms := []string{"chatgpt", "gemini", "tongyi", "doubao"}
+	statusMap := make(map[string]*models.SyncStatus)
+	for i := range statuses {
+		statusMap[statuses[i].Platform] = &statuses[i]
+	}
+
+	result := make([]dto.PlatformSyncStatus, 0, len(platforms))
+	for _, p := range platforms {
+		ps := dto.PlatformSyncStatus{Platform: p}
+		if s, ok := statusMap[p]; ok {
+			ps.LastSyncedAt = &s.LastSyncedAt
+		}
+		// Count unread conversations: synced_at > last_read_at OR last_read_at IS NULL
+		var unread int64
+		s.DB.Model(&models.Conversation{}).
+			Where("user_id = ? AND platform = ? AND (last_read_at IS NULL OR synced_at > last_read_at)", userID, p).
+			Count(&unread)
+		ps.UnreadCount = int(unread)
+		result = append(result, ps)
+	}
+	return result, nil
 }

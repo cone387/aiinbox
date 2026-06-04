@@ -58,6 +58,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.SyncLog{},
 		&models.ExportTask{},
 		&models.APIToken{},
+		&models.SyncStatus{},
 	)
 }
 

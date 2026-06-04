@@ -136,11 +136,13 @@ func main() {
 		// Sync routes
 		protected.POST("/conversations/sync", syncHandler.SyncConversation)
 		protected.POST("/conversations/batch", syncHandler.BatchSync)
+		protected.GET("/sync/status", syncHandler.GetSyncStatus)
 
 		// Query routes
 		protected.GET("/conversations", convHandler.ListConversations)
 		protected.GET("/conversations/:id", convHandler.GetConversation)
 		protected.GET("/conversations/:id/messages", convHandler.GetMessages)
+		protected.POST("/conversations/:id/read", convHandler.MarkRead)
 		protected.DELETE("/conversations", convHandler.BatchDelete)
 
 		// Search routes
