@@ -1,11 +1,17 @@
 // Content script (ISOLATED world) - runs at document_start
 // Injects page-intercept.js and relays captured data to background
 
+// Track whether extension context is still valid
+let contextValid = true
+
 // Log forwarding to background
 function forwardLog(level: string, msg: string) {
+  if (!contextValid) return
   try {
     chrome.runtime.sendMessage({ type: 'LOG', level, msg }).catch(() => {})
-  } catch {}
+  } catch {
+    contextValid = false
+  }
 }
 
 const csLog = (msg: string) => { console.log(msg); forwardLog('INFO', msg) }
@@ -32,6 +38,7 @@ if (target) {
 window.addEventListener('message', (event) => {
   if (event.source !== window) return
   if (!event.data || event.data.source !== 'aiinbox-page') return
+  if (!contextValid) return
 
   const { type, payload } = event.data
   if (type === 'RESPONSE_COMPLETE' && payload) {
@@ -42,13 +49,18 @@ window.addEventListener('message', (event) => {
         ...payload,
       }, (resp) => {
         if (chrome.runtime.lastError) {
-          csError(`[AI Inbox Content] Chrome runtime error: ${chrome.runtime.lastError.message}`)
+          const msg = chrome.runtime.lastError.message || ''
+          if (msg.includes('Extension context invalidated')) {
+            contextValid = false
+          } else {
+            csError(`[AI Inbox Content] Chrome runtime error: ${msg}`)
+          }
         } else {
           csLog(`[AI Inbox Content] Background responded: ${JSON.stringify(resp)}`)
         }
       })
     } catch (err) {
-      csError(`[AI Inbox Content] Failed to relay to background: ${err}`)
+      contextValid = false
     }
   }
 })

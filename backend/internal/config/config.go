@@ -94,7 +94,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("rate_limit.auth_max_attempts", 10)
 	v.SetDefault("rate_limit.auth_block_minutes", 15)
 	v.SetDefault("rate_limit.search_per_minute", 30)
-	v.SetDefault("rate_limit.api_per_minute", 120)
+	v.SetDefault("rate_limit.api_per_minute", 600)
 	v.SetDefault("cors.allowed_origins", []string{"http://localhost:9631", "chrome-extension://*"})
 	v.SetDefault("cors.allowed_methods", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
 	v.SetDefault("log.level", "info")
