@@ -1,7 +1,7 @@
 import { getAdapterByPlatform } from '../adapters'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG } from '../types'
-import { saveConversation, getPending, markSynced, markFailed, getStats, clearSynced, CachedConversation } from '../storage/db'
-import { exportAsJSON } from '../storage/export'
+import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, CachedConversation } from '../storage/db'
+import { exportAsJSON, exportAsMarkdown } from '../storage/export'
 
 // Platform URL detection patterns
 const PLATFORM_PATTERNS: Record<string, string[]> = {
@@ -423,13 +423,17 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
 
       case 'GET_CACHE_STATS': {
         const stats = await getStats()
-        sendResponse({ ...stats, lastSyncTime })
+        const byPlatform = await getStatsByPlatform()
+        sendResponse({ ...stats, byPlatform, lastSyncTime })
         break
       }
 
       case 'EXPORT_DATA': {
-        const json = await exportAsJSON(message.filter)
-        sendResponse({ data: json })
+        const format = message.format === 'markdown' ? 'markdown' : 'json'
+        const data = format === 'markdown'
+          ? await exportAsMarkdown(message.filter)
+          : await exportAsJSON(message.filter)
+        sendResponse({ data, format })
         break
       }
 

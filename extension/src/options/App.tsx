@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
-import { ExtensionConfig, ServerConfig, DEFAULT_CONFIG } from '../types'
+import { ExtensionConfig, ServerConfig, DEFAULT_CONFIG, Platform, PLATFORMS } from '../types'
+import { platformLabels, PlatformIcon } from '../shared/platforms'
 
 interface HealthState {
   server: boolean | null
   auth: boolean | null
 }
+
+interface CacheStat { total: number; pending: number; synced: number; failed: number }
+type ExportFormat = 'json' | 'markdown'
 
 function App() {
   const [config, setConfig] = useState<ExtensionConfig>(DEFAULT_CONFIG)
@@ -12,12 +16,70 @@ function App() {
   const [health, setHealth] = useState<Record<number, HealthState>>({})
   const [authorizing, setAuthorizing] = useState<number | null>(null)
   const [editingName, setEditingName] = useState<Record<number, boolean>>({})
+  const [cacheTotal, setCacheTotal] = useState<CacheStat>({ total: 0, pending: 0, synced: 0, failed: 0 })
+  const [cacheByPlatform, setCacheByPlatform] = useState<Record<string, CacheStat>>({})
+  const [exportPlatform, setExportPlatform] = useState<Platform | 'all'>('all')
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     loadConfig().then((cfg) => {
       if (cfg) cfg.servers?.forEach((_, i) => checkHealth(i, cfg))
     })
+    loadCacheStats()
   }, [])
+
+  async function loadCacheStats() {
+    try {
+      const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
+      if (stats && typeof stats.total === 'number') {
+        setCacheTotal({ total: stats.total, pending: stats.pending, synced: stats.synced, failed: stats.failed })
+        setCacheByPlatform(stats.byPlatform || {})
+      }
+    } catch {}
+  }
+
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const filter = exportPlatform === 'all' ? undefined : { platform: exportPlatform }
+      const resp = await chrome.runtime.sendMessage({ type: 'EXPORT_DATA', format: exportFormat, filter })
+      if (resp?.data) {
+        const mime = exportFormat === 'markdown' ? 'text/markdown' : 'application/json'
+        const ext = exportFormat === 'markdown' ? 'md' : 'json'
+        const blob = new Blob([resp.data], { type: mime })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        const suffix = exportPlatform === 'all' ? '' : `-${exportPlatform}`
+        a.download = `aiinbox-export${suffix}-${new Date().toISOString().slice(0, 10)}.${ext}`
+        a.click()
+        URL.revokeObjectURL(url)
+      } else {
+        setMessage('没有可导出的数据')
+        setTimeout(() => setMessage(''), 3000)
+      }
+    } catch (err) {
+      setMessage('导出失败: ' + err)
+    }
+    setExporting(false)
+  }
+
+  async function handleClearSynced() {
+    const resp = await chrome.runtime.sendMessage({ type: 'CLEAR_SYNCED' })
+    if (resp?.ok) {
+      setMessage(`已清除 ${resp.deleted || 0} 条已同步缓存`)
+      setTimeout(() => setMessage(''), 3000)
+      loadCacheStats()
+    }
+  }
+
+  async function handleRetryFailed() {
+    await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
+    setMessage('已触发重新同步')
+    setTimeout(() => setMessage(''), 3000)
+    setTimeout(loadCacheStats, 1500)
+  }
 
   async function loadConfig(): Promise<ExtensionConfig | null> {
     const stored = await chrome.storage.local.get('config')
@@ -235,6 +297,113 @@ function App() {
             </div>
           )
         })}
+      </div>
+
+      {/* Data export */}
+      <div style={{ marginTop: '28px' }}>
+        <h2 style={{ fontSize: '16px', margin: '0 0 4px' }}>数据导出</h2>
+        <p style={{ color: '#666', fontSize: '13px', margin: '0 0 12px' }}>
+          导出本地缓存的对话数据（共 {cacheTotal.total} 条
+          {cacheTotal.pending > 0 && <span style={{ color: '#d97706' }}>，待同步 {cacheTotal.pending}</span>}
+          {cacheTotal.failed > 0 && <span style={{ color: '#ef4444' }}>，失败 {cacheTotal.failed}</span>}
+          ）。
+        </p>
+
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px' }}>
+          {/* Platform选择 */}
+          <div style={{ fontSize: '13px', color: '#374151', marginBottom: '8px' }}>选择平台</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+            <button
+              onClick={() => setExportPlatform('all')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px',
+                border: exportPlatform === 'all' ? '1.5px solid #3b82f6' : '1px solid #d1d5db',
+                borderRadius: '6px', cursor: 'pointer',
+                backgroundColor: exportPlatform === 'all' ? '#f8faff' : 'white',
+              }}
+            >
+              全部
+              <span style={{ color: '#94a3b8' }}>{cacheTotal.total}</span>
+            </button>
+            {PLATFORMS.map((platform) => {
+              const c = cacheByPlatform[platform]
+              const active = exportPlatform === platform
+              return (
+                <button
+                  key={platform}
+                  onClick={() => setExportPlatform(platform)}
+                  disabled={!c || c.total === 0}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px',
+                    border: active ? '1.5px solid #3b82f6' : '1px solid #d1d5db',
+                    borderRadius: '6px', cursor: !c || c.total === 0 ? 'not-allowed' : 'pointer',
+                    backgroundColor: active ? '#f8faff' : 'white',
+                    opacity: !c || c.total === 0 ? 0.45 : 1,
+                  }}
+                >
+                  <PlatformIcon platform={platform} size={18} />
+                  {platformLabels[platform]}
+                  <span style={{ color: c && c.synced === c.total ? '#16a34a' : '#94a3b8' }}>
+                    {c ? `${c.synced}/${c.total}` : 0}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* 格式选择 */}
+          <div style={{ fontSize: '13px', color: '#374151', marginBottom: '8px' }}>导出格式</div>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            {(['json', 'markdown'] as ExportFormat[]).map((fmt) => (
+              <button
+                key={fmt}
+                onClick={() => setExportFormat(fmt)}
+                style={{
+                  padding: '6px 16px', fontSize: '13px',
+                  border: exportFormat === fmt ? '1.5px solid #3b82f6' : '1px solid #d1d5db',
+                  borderRadius: '6px', cursor: 'pointer',
+                  backgroundColor: exportFormat === fmt ? '#f8faff' : 'white',
+                }}
+              >
+                {fmt === 'json' ? 'JSON' : 'Markdown'}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleExport}
+            disabled={exporting || cacheTotal.total === 0}
+            style={{
+              padding: '8px 20px', fontSize: '13px', border: 'none', borderRadius: '6px',
+              cursor: exporting || cacheTotal.total === 0 ? 'not-allowed' : 'pointer',
+              backgroundColor: cacheTotal.total === 0 ? '#cbd5e1' : '#2563eb', color: 'white', fontWeight: 500,
+            }}
+          >
+            {exporting ? '导出中...' : '↓ 导出数据'}
+          </button>
+          <button
+            onClick={loadCacheStats}
+            style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}
+          >
+            刷新统计
+          </button>
+          {cacheTotal.failed > 0 && (
+            <button
+              onClick={handleRetryFailed}
+              style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #fde68a', borderRadius: '6px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}
+            >
+              重试失败 ({cacheTotal.failed})
+            </button>
+          )}
+          {cacheTotal.synced > 0 && (
+            <button
+              onClick={handleClearSynced}
+              style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#6b7280' }}
+            >
+              清除已同步
+            </button>
+          )}
+        </div>
       </div>
 
     </div>

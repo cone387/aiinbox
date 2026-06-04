@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS, DEFAULT_CONFIG } from '../types'
+import { platformLabels, platformUrls, PlatformIcon } from '../shared/platforms'
+
+interface CacheStat { total: number; pending: number; synced: number; failed: number }
 
 interface PopupState {
   status: ExtensionStatus
@@ -10,33 +13,7 @@ interface PopupState {
   authOk: boolean | null
   loading: boolean
   platformCounts: Record<string, number>
-  cacheStats: { total: number; pending: number; synced: number; failed: number; lastSyncTime: string | null }
-}
-
-const platformLabels: Record<Platform, string> = {
-  chatgpt: 'ChatGPT',
-  gemini: 'Gemini',
-  tongyi: '通义千问',
-  doubao: '豆包',
-}
-
-const platformUrls: Record<Platform, string> = {
-  chatgpt: 'https://chatgpt.com',
-  gemini: 'https://gemini.google.com',
-  tongyi: 'https://tongyi.aliyun.com',
-  doubao: 'https://doubao.com',
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  if (diffMs < 60000) return '刚刚'
-  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)} 分钟前`
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  }
-  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  cacheStats: { total: number; pending: number; synced: number; failed: number; lastSyncTime: string | null; byPlatform: Record<string, CacheStat> }
 }
 
 function App() {
@@ -49,7 +26,7 @@ function App() {
     authOk: null,
     loading: true,
     platformCounts: {},
-    cacheStats: { total: 0, pending: 0, synced: 0, failed: 0, lastSyncTime: null },
+    cacheStats: { total: 0, pending: 0, synced: 0, failed: 0, lastSyncTime: null, byPlatform: {} },
   })
 
   const configRef = useRef(state.config)
@@ -106,29 +83,24 @@ function App() {
     } catch {}
   }
 
-  async function handleExport() {
+  async function handleExport(platform?: Platform) {
     try {
-      const resp = await chrome.runtime.sendMessage({ type: 'EXPORT_DATA' })
+      const resp = await chrome.runtime.sendMessage({
+        type: 'EXPORT_DATA',
+        format: 'json',
+        filter: platform ? { platform } : undefined,
+      })
       if (resp?.data) {
         const blob = new Blob([resp.data], { type: 'application/json' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `aiinbox-export-${new Date().toISOString().slice(0, 10)}.json`
+        const suffix = platform ? `-${platform}` : ''
+        a.download = `aiinbox-export${suffix}-${new Date().toISOString().slice(0, 10)}.json`
         a.click()
         URL.revokeObjectURL(url)
       }
     } catch {}
-  }
-
-  async function handleRetryFailed() {
-    await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
-    setTimeout(loadCacheStats, 3000)
-  }
-
-  async function handleClearSynced() {
-    await chrome.runtime.sendMessage({ type: 'CLEAR_SYNCED' })
-    loadCacheStats()
   }
 
   const loadData = useCallback(async () => {
@@ -285,13 +257,14 @@ function App() {
           {PLATFORMS.map((platform) => {
             const enabled = enabledPlatforms.includes(platform)
             const count = state.platformCounts[platform] || 0
+            const cache = state.cacheStats.byPlatform[platform]
             return (
               <div key={platform} style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '5px 8px', borderRadius: '4px',
               }}>
                 <label style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', flex: 1, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '8px', flex: 1, cursor: 'pointer', minWidth: 0,
                 }}>
                   <input
                     type="checkbox"
@@ -299,14 +272,31 @@ function App() {
                     onChange={() => togglePlatform(platform)}
                     style={{ width: '14px', height: '14px', cursor: 'pointer' }}
                   />
+                  <PlatformIcon platform={platform} size={18} />
                   <span style={{ fontSize: '12px', color: '#374151' }}>
                     {platformLabels[platform]}
                   </span>
                 </label>
-                {count > 0 && (
+                {cache && cache.total > 0 ? (
+                  <span style={{ fontSize: '11px', color: cache.synced === cache.total ? '#16a34a' : '#d97706' }} title="本地缓存已同步 / 总数">
+                    {cache.synced}/{cache.total} 已同步
+                  </span>
+                ) : count > 0 ? (
                   <span style={{ fontSize: '11px', color: '#6b7280' }}>
                     {count} 条
                   </span>
+                ) : null}
+                {cache && cache.total > 0 && (
+                  <button
+                    onClick={() => handleExport(platform)}
+                    style={{
+                      padding: '2px 6px', fontSize: '11px', border: '1px solid #e2e8f0',
+                      borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer', color: '#6b7280',
+                    }}
+                    title={`导出 ${platformLabels[platform]} 数据`}
+                  >
+                    ↓
+                  </button>
                 )}
                 <button
                   onClick={() => chrome.tabs.create({ url: platformUrls[platform] })}
@@ -324,41 +314,6 @@ function App() {
           })}
         </div>
       </div>
-
-      {/* Cache stats */}
-      {state.cacheStats.total > 0 && (
-        <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>本地缓存</div>
-            {state.cacheStats.lastSyncTime && (
-              <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-                最近同步: {formatTime(state.cacheStats.lastSyncTime)}
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: '12px', fontSize: '12px', marginBottom: '6px' }}>
-            <span>共 {state.cacheStats.total}</span>
-            {state.cacheStats.pending > 0 && <span style={{ color: '#d97706' }}>待同步 {state.cacheStats.pending}</span>}
-            {state.cacheStats.synced > 0 && <span style={{ color: '#16a34a' }}>已同步 {state.cacheStats.synced}</span>}
-            {state.cacheStats.failed > 0 && <span style={{ color: '#ef4444' }}>失败 {state.cacheStats.failed}</span>}
-          </div>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={handleExport} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid #e2e8f0', borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer' }}>
-              导出数据
-            </button>
-            {state.cacheStats.failed > 0 && (
-              <button onClick={handleRetryFailed} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid #e2e8f0', borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer', color: '#d97706' }}>
-                重试失败
-              </button>
-            )}
-            {state.cacheStats.synced > 0 && (
-              <button onClick={handleClearSynced} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid #e2e8f0', borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer', color: '#6b7280' }}>
-                清除已同步
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -27,6 +27,8 @@ export interface CacheStats {
   failed: number
 }
 
+export type PlatformStats = Record<string, CacheStats>
+
 let dbInstance: IDBDatabase | null = null
 
 export function openDB(): Promise<IDBDatabase> {
@@ -240,4 +242,17 @@ export async function getStats(): Promise<CacheStats> {
     tx.oncomplete = () => resolve(stats)
     tx.onerror = () => reject(tx.error)
   })
+}
+
+export async function getStatsByPlatform(): Promise<PlatformStats> {
+  const conversations = await getAllConversations()
+  const byPlatform: PlatformStats = {}
+  for (const conv of conversations) {
+    const s = byPlatform[conv.platform] || (byPlatform[conv.platform] = { total: 0, pending: 0, synced: 0, failed: 0 })
+    s.total++
+    if (conv.syncStatus === 'pending') s.pending++
+    else if (conv.syncStatus === 'synced') s.synced++
+    else if (conv.syncStatus === 'failed') s.failed++
+  }
+  return byPlatform
 }
