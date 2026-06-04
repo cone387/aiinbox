@@ -9,6 +9,7 @@ export interface CapturedResponse {
   url: string
   statusCode: number
   body: string
+  requestBody?: string
   isComplete: boolean
   timestamp: string
   captureMode: CaptureMode

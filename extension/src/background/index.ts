@@ -208,6 +208,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           url: message.url || '',
           statusCode: 200,
           body: message.body || '',
+          requestBody: message.requestBody || '',
           isComplete: message.isComplete ?? true,
           timestamp: new Date().toISOString(),
           captureMode,
@@ -215,7 +216,8 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
 
         if (result.success && result.conversation) {
           const conv = result.conversation
-          console.log(`[AI Inbox] Parsed ${captureMode} from ${platform} (${conv.messages.length} messages, title: "${conv.title}", id: ${conv.conversationId})`)
+          const msgSummary = conv.messages.map(m => `${m.role}:${m.content.length}`).join(', ')
+          console.log(`[AI Inbox] Parsed ${captureMode} from ${platform} (${conv.messages.length} messages [${msgSummary}], title: "${conv.title}", id: ${conv.conversationId})`)
 
           // Cache first — save to IndexedDB before attempting upload
           const cached: CachedConversation = {

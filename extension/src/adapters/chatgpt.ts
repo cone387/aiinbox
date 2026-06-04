@@ -26,7 +26,7 @@ export class ChatGPTAdapter extends PlatformAdapter {
       }
 
       if (body.includes('data: ')) {
-        return this.parseSSEResponse(body, response.isComplete)
+        return this.parseSSEResponse(body, response.isComplete, response.requestBody)
       }
 
       return { success: false, error: 'Unrecognized ChatGPT response format' }
@@ -35,7 +35,7 @@ export class ChatGPTAdapter extends PlatformAdapter {
     }
   }
 
-  private parseSSEResponse(body: string, isComplete: boolean): ParseResult {
+  private parseSSEResponse(body: string, isComplete: boolean, requestBody?: string): ParseResult {
     const lines = body.split('\n').filter((l) => l.startsWith('data: '))
     const messages: Array<{ role: string; content: string; timestamp?: string }> = []
     let conversationId = ''
@@ -119,6 +119,14 @@ export class ChatGPTAdapter extends PlatformAdapter {
 
     // Deduplicate: remove system messages and empty entries
     const dedupedMessages = this.deduplicateMessages(messages)
+
+    // If no user message found in SSE, extract from requestBody
+    if (requestBody && dedupedMessages.length > 0 && !dedupedMessages.some(m => m.role === 'user')) {
+      const userMsg = this.extractUserMessageFromRequest(requestBody)
+      if (userMsg) {
+        dedupedMessages.unshift(userMsg)
+      }
+    }
 
     if (dedupedMessages.length === 0) {
       return { success: false, error: 'No messages found in SSE response' }
@@ -287,21 +295,49 @@ export class ChatGPTAdapter extends PlatformAdapter {
   }
 
   /**
-   * Append text to the last non-system message in the array.
+   * Extract user message from the POST request body.
+   * ChatGPT POST body has structure: { messages: [{ content: { parts: ["text"] }, author: { role: "user" } }] }
+   */
+  private extractUserMessageFromRequest(
+    requestBody: string
+  ): { role: string; content: string; timestamp?: string } | null {
+    try {
+      const data = JSON.parse(requestBody)
+      // ChatGPT request format
+      const msgs = data.messages
+      if (Array.isArray(msgs)) {
+        for (const msg of msgs) {
+          if (msg.author?.role === 'user' && msg.content?.parts) {
+            const content = msg.content.parts.filter((p: any) => typeof p === 'string').join('')
+            if (content) {
+              return { role: 'user', content, timestamp: this.nowISO() }
+            }
+          }
+        }
+      }
+    } catch {}
+    return null
+  }
+
+  /**
+   * Append text to the assistant reply being streamed.
+   * During a turn, all append/delta operations build the assistant's reply,
+   * so they must target an assistant message. If none exists yet (e.g. the
+   * conversation has no model_editable_context placeholder), create one —
+   * otherwise the reply would leak onto the user message or be dropped.
    */
   private appendToLastMessage(
     messages: Array<{ role: string; content: string; timestamp?: string }>,
     text: string
   ): void {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role !== 'system') {
+      if (messages[i].role === 'assistant') {
         messages[i].content += text
         return
       }
+      // The reply always follows the user turn; don't append past it.
+      if (messages[i].role === 'user') break
     }
-    // Fallback: append to last message if no non-system found
-    if (messages.length > 0) {
-      messages[messages.length - 1].content += text
-    }
+    messages.push({ role: 'assistant', content: text, timestamp: undefined })
   }
 }
