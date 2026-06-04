@@ -121,10 +121,32 @@ function simpleMarkdown(text: string): string {
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-  // Blockquotes
+  // Blockquotes (consecutive lines)
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
+  html = html.replace(/<\/blockquote>\n<blockquote>/g, '<br/>')
   // Horizontal rule
   html = html.replace(/^-{3,}$/gm, '<hr/>')
+  // Tables
+  html = html.replace(/(?:^|\n)((?:\|.+\|\n?)+)/g, (_match, tableBlock: string) => {
+    const rows = tableBlock.trim().split('\n').filter(r => r.trim())
+    if (rows.length < 2) return tableBlock
+    // Check if second row is separator
+    const isSep = /^\|[\s\-:|]+\|$/.test(rows[1].trim())
+    if (!isSep) return tableBlock
+    const headerCells = rows[0].split('|').filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim())
+    const thead = '<thead><tr>' + headerCells.map(c => `<th>${c}</th>`).join('') + '</tr></thead>'
+    const bodyRows = rows.slice(2)
+    const tbody = '<tbody>' + bodyRows.map(row => {
+      const cells = row.split('|').filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim())
+      return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>'
+    }).join('') + '</tbody>'
+    return `<table>${thead}${tbody}</table>`
+  })
+  // Unordered lists
+  html = html.replace(/(?:^|\n)((?:- .+\n?)+)/g, (_match, listBlock: string) => {
+    const items = listBlock.trim().split('\n').map(line => line.replace(/^- /, ''))
+    return '<ul>' + items.map(item => `<li>${item}</li>`).join('') + '</ul>'
+  })
   // Paragraphs: double newline = new paragraph, single newline = <br/>
   html = html.replace(/\n\n+/g, '</p><p>')
   html = html.replace(/\n/g, '<br/>')
@@ -137,5 +159,11 @@ function simpleMarkdown(text: string): string {
   html = html.replace(/(<\/pre>)<\/p>/g, '$1')
   html = html.replace(/<p>(<blockquote>)/g, '$1')
   html = html.replace(/(<\/blockquote>)<\/p>/g, '$1')
+  html = html.replace(/<p>(<table>)/g, '$1')
+  html = html.replace(/(<\/table>)<\/p>/g, '$1')
+  html = html.replace(/<p>(<ul>)/g, '$1')
+  html = html.replace(/(<\/ul>)<\/p>/g, '$1')
+  html = html.replace(/<p>(<hr\/>)/g, '$1')
+  html = html.replace(/(<hr\/>)<\/p>/g, '$1')
   return html
 }
