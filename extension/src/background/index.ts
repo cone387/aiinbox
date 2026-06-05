@@ -22,6 +22,28 @@ let historySync: { running: boolean; platform: Platform | null; phase: SyncPhase
   running: false, platform: null, phase: 'idle', done: 0, total: 0, failed: 0, error: null,
 }
 
+// Watchdog: if a running sync goes silent (page closed/navigated, or a dropped
+// plan reply) for this long, mark it errored so the UI recovers instead of
+// staying stuck in 'running'. Re-armed on every sync message.
+let syncWatchdog: ReturnType<typeof setTimeout> | null = null
+const SYNC_WATCHDOG_MS = 120000
+
+function armSyncWatchdog(): void {
+  if (syncWatchdog) clearTimeout(syncWatchdog)
+  syncWatchdog = setTimeout(() => {
+    syncWatchdog = null
+    if (historySync.running) {
+      console.warn('[AI Inbox] History sync watchdog fired — no progress for 120s, resetting')
+      historySync = { ...historySync, running: false, phase: 'error', error: 'timeout' }
+      revertBadge()
+    }
+  }, SYNC_WATCHDOG_MS)
+}
+
+function clearSyncWatchdog(): void {
+  if (syncWatchdog) { clearTimeout(syncWatchdog); syncWatchdog = null }
+}
+
 // Initialize
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[AI Inbox] Extension installed')
@@ -483,10 +505,12 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         }
         historySync = { running: true, platform, phase: 'listing', done: 0, total: 0, failed: 0, error: null }
         updateSyncBadge()
+        armSyncWatchdog()
         try {
           await chrome.tabs.sendMessage(tab.id, { type: 'SYNC_ALL_HISTORY', platform })
           sendResponse({ ok: true })
         } catch (err) {
+          clearSyncWatchdog()
           historySync = { running: false, platform, phase: 'error', done: 0, total: 0, failed: 0, error: String(err) }
           revertBadge()
           sendResponse({ ok: false, error: String(err) })
@@ -513,6 +537,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         historySync.phase = 'fetching'
         historySync.total = toFetch.length
         historySync.done = 0
+        armSyncWatchdog()
         console.log(`[AI Inbox] History sync plan: ${items.length} listed, ${toFetch.length} to fetch`)
         sendResponse({ toFetch })
         break
@@ -526,6 +551,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         if (message.error) historySync.error = String(message.error)
         if (message.phase === 'done' || message.phase === 'error') {
           historySync.running = false
+          clearSyncWatchdog()
           if (message.phase === 'done') {
             console.log(`[AI Inbox] History sync complete: ${historySync.done}/${historySync.total} (failed ${historySync.failed})`)
           } else {
@@ -534,6 +560,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           revertBadge()
         } else {
           updateSyncBadge()
+          armSyncWatchdog()
         }
         sendResponse({ ok: true })
         break

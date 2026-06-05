@@ -211,9 +211,17 @@
   }
 
   // Wait for background's incremental plan (toFetch ids) relayed via content script.
+  // Rejects after 30s so a dropped reply doesn't hang the whole sync in 'listing'.
   function requestPlan(platform, items) {
-    return new Promise(function (resolve) {
-      planResolver = resolve
+    return new Promise(function (resolve, reject) {
+      var to = setTimeout(function () {
+        planResolver = null
+        reject(new Error('plan_timeout'))
+      }, 30000)
+      planResolver = function (v) {
+        clearTimeout(to)
+        resolve(v)
+      }
       window.postMessage({ source: 'aiinbox-page', type: 'SYNC_HISTORY_PLAN', payload: { platform: platform, items: items } }, '*')
     })
   }
@@ -257,6 +265,9 @@
             items.push({ id: list[i].id, updateTime: list[i].update_time })
           }
           offset += limit
+          // Heartbeat: lets the popup show a running count and resets the
+          // background watchdog during long enumerations.
+          postProgress({ phase: 'listing', done: items.length, total: total === Infinity ? 0 : total, failed: 0 })
           if (list.length === 0 || offset >= total) return items
           return sleep(syncThrottle).then(function () { return step(0) })
         })
@@ -319,7 +330,8 @@
       chatgptListAll(token).then(function (items) {
         syncLog('共列举到 ' + items.length + ' 条对话，请求增量计划…')
         // Ask background which ones actually need fetching (incremental).
-        requestPlan(platform, items).then(function (toFetch) {
+        // Return the chain so a plan timeout/rejection reaches the outer catch.
+        return requestPlan(platform, items).then(function (toFetch) {
           var ids = toFetch || []
           syncLog('需要拉取 ' + ids.length + ' 条（其余已是最新）')
           postProgress({ phase: 'fetching', done: 0, total: ids.length, failed: 0 })

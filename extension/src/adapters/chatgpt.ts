@@ -196,8 +196,15 @@ export class ChatGPTAdapter extends PlatformAdapter {
         messages: messages.map((m) =>
           this.createMessage(this.mapRole(m.role), m.content, m.timestamp, true)
         ),
-        createdAt: messages[0]?.timestamp || this.nowISO(),
-        updatedAt: messages[messages.length - 1]?.timestamp || this.nowISO(),
+        // Prefer the conversation's own create/update timestamps so the incremental
+        // sync diff compares like-for-like against the list API's update_time.
+        // Both endpoints report these as unix-seconds floats here.
+        createdAt: typeof data.create_time === 'number'
+          ? new Date(data.create_time * 1000).toISOString()
+          : (messages[0]?.timestamp || this.nowISO()),
+        updatedAt: typeof data.update_time === 'number'
+          ? new Date(data.update_time * 1000).toISOString()
+          : (messages[messages.length - 1]?.timestamp || this.nowISO()),
       }
 
       return { success: true, conversation }
