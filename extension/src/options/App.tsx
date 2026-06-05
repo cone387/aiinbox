@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ExtensionConfig, ServerConfig, DEFAULT_CONFIG, Platform, PLATFORMS } from '../types'
-import { platformLabels, PlatformIcon } from '../shared/platforms'
+import { platformLabels, PlatformIcon, ExportIcon } from '../shared/platforms'
 
 interface HealthState {
   server: boolean | null
@@ -374,12 +374,14 @@ function App() {
             onClick={handleExport}
             disabled={exporting || cacheTotal.total === 0}
             style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
               padding: '8px 20px', fontSize: '13px', border: 'none', borderRadius: '6px',
               cursor: exporting || cacheTotal.total === 0 ? 'not-allowed' : 'pointer',
               backgroundColor: cacheTotal.total === 0 ? '#cbd5e1' : '#2563eb', color: 'white', fontWeight: 500,
             }}
           >
-            {exporting ? '导出中...' : '↓ 导出数据'}
+            <ExportIcon size={14} />
+            {exporting ? '导出中...' : '导出数据'}
           </button>
           <button
             onClick={loadCacheStats}

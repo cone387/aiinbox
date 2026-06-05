@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS, DEFAULT_CONFIG } from '../types'
-import { platformLabels, platformUrls, PlatformIcon } from '../shared/platforms'
+import { platformLabels, platformUrls, PlatformIcon, ExportIcon } from '../shared/platforms'
 
 interface CacheStat { total: number; pending: number; synced: number; failed: number }
 
@@ -290,12 +290,13 @@ function App() {
                   <button
                     onClick={() => handleExport(platform)}
                     style={{
-                      padding: '2px 6px', fontSize: '11px', border: '1px solid #e2e8f0',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '3px 6px', border: '1px solid #e2e8f0',
                       borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer', color: '#6b7280',
                     }}
                     title={`导出 ${platformLabels[platform]} 数据`}
                   >
-                    ↓
+                    <ExportIcon size={13} />
                   </button>
                 )}
                 <button
