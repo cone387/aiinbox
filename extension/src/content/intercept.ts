@@ -62,5 +62,41 @@ window.addEventListener('message', (event) => {
     } catch (err) {
       contextValid = false
     }
+  } else if (type === 'SYNC_HISTORY_PLAN' && payload) {
+    // Page listed all conversations; ask background which need fetching, relay result back.
+    try {
+      chrome.runtime.sendMessage({ type: 'PLAN_HISTORY_SYNC', ...payload }, (resp) => {
+        if (chrome.runtime.lastError) {
+          if ((chrome.runtime.lastError.message || '').includes('Extension context invalidated')) contextValid = false
+        }
+        window.postMessage({
+          source: 'aiinbox-ext',
+          type: 'SYNC_HISTORY_PLAN_RESULT',
+          payload: { toFetch: (resp && resp.toFetch) || [] },
+        }, '*')
+      })
+    } catch {
+      contextValid = false
+    }
+  } else if (type === 'SYNC_PROGRESS' && payload) {
+    try {
+      chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', ...payload }).catch(() => {})
+    } catch {
+      contextValid = false
+    }
+  } else if (type === 'SYNC_LOG' && payload) {
+    // Forward page-side sync logs to the extension log buffer (查看日志).
+    try {
+      chrome.runtime.sendMessage({ type: 'LOG', level: payload.level || 'INFO', msg: payload.msg }).catch(() => {})
+    } catch {
+      contextValid = false
+    }
+  }
+})
+
+// Receive sync commands from the extension (popup → background → here → page).
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === 'SYNC_ALL_HISTORY') {
+    window.postMessage({ source: 'aiinbox-ext', type: 'SYNC_ALL_HISTORY', platform: message.platform }, '*')
   }
 })

@@ -186,5 +186,203 @@
     return originalSend.apply(this, arguments)
   }
 
+  // ===== One-click full history sync =====
+  // Driven by the extension (popup → background → content script → here).
+  // Uses originalFetch so our own requests are NOT re-intercepted.
+
+  var SYNC_THROTTLE_MS = 600   // base delay between requests; grows on 429
+  var syncThrottle = SYNC_THROTTLE_MS
+  var syncFailed = 0
+  var syncRunning = false
+  var planResolver = null // resolves with the toFetch id list from background
+
+  function sleep(ms) {
+    return new Promise(function (r) { setTimeout(r, ms) })
+  }
+
+  function postProgress(fields) {
+    window.postMessage({ source: 'aiinbox-page', type: 'SYNC_PROGRESS', payload: fields }, '*')
+  }
+
+  // Forward a human-readable line to the extension log buffer (查看日志).
+  function syncLog(msg, level) {
+    console.log('[AI Inbox][sync] ' + msg)
+    window.postMessage({ source: 'aiinbox-page', type: 'SYNC_LOG', payload: { msg: '[sync] ' + msg, level: level || 'INFO' } }, '*')
+  }
+
+  // Wait for background's incremental plan (toFetch ids) relayed via content script.
+  function requestPlan(platform, items) {
+    return new Promise(function (resolve) {
+      planResolver = resolve
+      window.postMessage({ source: 'aiinbox-page', type: 'SYNC_HISTORY_PLAN', payload: { platform: platform, items: items } }, '*')
+    })
+  }
+
+  function getChatGPTToken() {
+    return originalFetch('/api/auth/session', { credentials: 'include' })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (j) { return j && j.accessToken ? j.accessToken : '' })
+      .catch(function () { return '' })
+  }
+
+  // Paginate the conversations list. Returns [{ id, updateTime }].
+  function chatgptListAll(token) {
+    var headers = { 'Authorization': 'Bearer ' + token }
+    var items = []
+    var offset = 0
+    var limit = 28
+    var total = Infinity
+
+    function step(retry) {
+      var url = '/backend-api/conversations?offset=' + offset + '&limit=' + limit + '&order=updated'
+      return originalFetch(url, { headers: headers, credentials: 'include' }).then(function (r) {
+        if (r.status === 429) {
+          retry = retry || 0
+          if (retry < 4) {
+            var wait = Math.min(2000 * Math.pow(2, retry), 30000)
+            syncLog('列举对话 429 限流，' + Math.round(wait / 1000) + 's 后重试', 'WARN')
+            return sleep(wait).then(function () { return step(retry + 1) })
+          }
+          syncLog('列举对话多次 429 后中止，已收集 ' + items.length + ' 条', 'ERROR')
+          return items
+        }
+        if (!r.ok) {
+          syncLog('列举对话失败 HTTP ' + r.status, 'ERROR')
+          return items
+        }
+        return r.json().then(function (j) {
+          if (typeof j.total === 'number') total = j.total
+          var list = j.items || []
+          for (var i = 0; i < list.length; i++) {
+            items.push({ id: list[i].id, updateTime: list[i].update_time })
+          }
+          offset += limit
+          if (list.length === 0 || offset >= total) return items
+          return sleep(syncThrottle).then(function () { return step(0) })
+        })
+      })
+    }
+    return step(0)
+  }
+
+  // Fetch a single conversation with exponential backoff on 429.
+  // Returns { ok, text, status }. Grows syncThrottle when rate-limited so the
+  // whole run slows down, not just the retried request.
+  function fetchConversation(id, token, attempt) {
+    attempt = attempt || 0
+    var headers = { 'Authorization': 'Bearer ' + token }
+    return originalFetch('/backend-api/conversation/' + id, { headers: headers, credentials: 'include' }).then(function (r) {
+      if (r.status === 429) {
+        // Back off: grow the global throttle (cap 8s) and wait progressively longer.
+        syncThrottle = Math.min(Math.round(syncThrottle * 1.5), 8000)
+        if (attempt < 4) {
+          var wait = Math.min(2000 * Math.pow(2, attempt), 30000)
+          syncLog('429 限流，' + Math.round(wait / 1000) + 's 后重试 (第 ' + (attempt + 1) + ' 次)，节流升至 ' + syncThrottle + 'ms', 'WARN')
+          return sleep(wait).then(function () { return fetchConversation(id, token, attempt + 1) })
+        }
+        syncLog('对话 ' + id + ' 多次 429 后放弃', 'ERROR')
+        return { ok: false, text: null, status: 429 }
+      }
+      if (!r.ok) {
+        syncLog('对话 ' + id + ' 拉取失败 HTTP ' + r.status, 'ERROR')
+        return { ok: false, text: null, status: r.status }
+      }
+      return r.text().then(function (t) { return { ok: true, text: t, status: 200 } })
+    }).catch(function (err) {
+      syncLog('对话 ' + id + ' 网络错误: ' + String(err), 'ERROR')
+      return { ok: false, text: null, status: 0 }
+    })
+  }
+
+  function runFullSync(platform) {
+    if (syncRunning) return
+    syncRunning = true
+    syncThrottle = SYNC_THROTTLE_MS
+    syncFailed = 0
+
+    if (platform !== 'chatgpt') {
+      postProgress({ phase: 'error', error: 'unsupported' })
+      syncRunning = false
+      return
+    }
+
+    syncLog('开始同步 ChatGPT 全部历史')
+    postProgress({ phase: 'listing', done: 0, total: 0, failed: 0 })
+
+    getChatGPTToken().then(function (token) {
+      if (!token) {
+        syncLog('未取得 accessToken，请确认已登录 ChatGPT', 'ERROR')
+        postProgress({ phase: 'error', error: 'no_token' })
+        syncRunning = false
+        return
+      }
+      chatgptListAll(token).then(function (items) {
+        syncLog('共列举到 ' + items.length + ' 条对话，请求增量计划…')
+        // Ask background which ones actually need fetching (incremental).
+        requestPlan(platform, items).then(function (toFetch) {
+          var ids = toFetch || []
+          syncLog('需要拉取 ' + ids.length + ' 条（其余已是最新）')
+          postProgress({ phase: 'fetching', done: 0, total: ids.length, failed: 0 })
+          if (ids.length === 0) {
+            postProgress({ phase: 'done', done: 0, total: 0, failed: 0 })
+            syncRunning = false
+            return
+          }
+
+          var i = 0
+          function next() {
+            if (i >= ids.length) {
+              syncLog('同步完成：成功 ' + (ids.length - syncFailed) + ' / ' + ids.length + '，失败 ' + syncFailed, syncFailed ? 'WARN' : 'INFO')
+              postProgress({ phase: 'done', done: ids.length, total: ids.length, failed: syncFailed })
+              syncRunning = false
+              return
+            }
+            var id = ids[i]
+            fetchConversation(id, token, 0).then(function (res) {
+              if (res && res.ok && res.text) {
+                sendToExtension({
+                  requestId: 'sync_' + Date.now() + '_' + i,
+                  platform: platform,
+                  url: '/backend-api/conversation/' + id,
+                  body: res.text,
+                  requestBody: '',
+                  isComplete: true,
+                  captureMode: 'history',
+                })
+              } else {
+                syncFailed++
+              }
+              i++
+              postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })
+              sleep(syncThrottle).then(next)
+            })
+          }
+          next()
+        })
+      }).catch(function (err) {
+        syncLog('同步出错: ' + String(err), 'ERROR')
+        postProgress({ phase: 'error', error: String(err) })
+        syncRunning = false
+      })
+    })
+  }
+
+  // Listen for commands relayed from the content script (extension side).
+  window.addEventListener('message', function (event) {
+    if (event.source !== window) return
+    var data = event.data
+    if (!data || data.source !== 'aiinbox-ext') return
+
+    if (data.type === 'SYNC_ALL_HISTORY') {
+      runFullSync(data.platform)
+    } else if (data.type === 'SYNC_HISTORY_PLAN_RESULT') {
+      if (planResolver) {
+        var resolve = planResolver
+        planResolver = null
+        resolve((data.payload && data.payload.toFetch) || [])
+      }
+    }
+  })
+
   console.log('[AI Inbox] Page interceptor loaded on ' + detectPlatform())
 })()

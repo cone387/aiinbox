@@ -4,6 +4,8 @@ import { platformLabels, platformUrls, PlatformIcon, ExportIcon } from '../share
 
 interface CacheStat { total: number; pending: number; synced: number; failed: number }
 
+interface SyncProgress { running: boolean; platform: string | null; phase: string; done: number; total: number; failed: number; error: string | null }
+
 interface PopupState {
   status: ExtensionStatus
   isCollecting: boolean
@@ -14,6 +16,7 @@ interface PopupState {
   loading: boolean
   platformCounts: Record<string, number>
   cacheStats: { total: number; pending: number; synced: number; failed: number; lastSyncTime: string | null; byPlatform: Record<string, CacheStat> }
+  syncProgress: SyncProgress
 }
 
 function App() {
@@ -27,10 +30,40 @@ function App() {
     loading: true,
     platformCounts: {},
     cacheStats: { total: 0, pending: 0, synced: 0, failed: 0, lastSyncTime: null, byPlatform: {} },
+    syncProgress: { running: false, platform: null, phase: 'idle', done: 0, total: 0, failed: 0, error: null },
   })
 
   const configRef = useRef(state.config)
   configRef.current = state.config
+
+  const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const pollSyncProgress = useCallback(async () => {
+    try {
+      const sp = await chrome.runtime.sendMessage({ type: 'GET_SYNC_PROGRESS' })
+      if (sp && typeof sp.running === 'boolean') {
+        setState((s) => ({ ...s, syncProgress: sp }))
+        if (!sp.running && syncPollRef.current) {
+          clearInterval(syncPollRef.current)
+          syncPollRef.current = null
+          loadCacheStats()
+        }
+      }
+    } catch {}
+  }, [])
+
+  const startSyncPolling = useCallback(() => {
+    if (syncPollRef.current) return
+    syncPollRef.current = setInterval(pollSyncProgress, 1000)
+  }, [pollSyncProgress])
+
+  async function startHistorySync(platform: Platform) {
+    const resp = await chrome.runtime.sendMessage({ type: 'SYNC_ALL_HISTORY', platform })
+    if (resp?.ok) {
+      setState((s) => ({ ...s, syncProgress: { running: true, platform, phase: 'listing', done: 0, total: 0, failed: 0, error: null } }))
+      startSyncPolling()
+    }
+  }
 
   const doHealthCheck = useCallback(async (cfg?: ExtensionConfig) => {
     const c = cfg || configRef.current
@@ -124,10 +157,16 @@ function App() {
       loadPlatformCounts(cfg)
       loadCacheStats()
       doHealthCheck(cfg)
+      pollSyncProgress().then(() => {
+        // Resume polling if a sync is still in flight (popup was reopened).
+        chrome.runtime.sendMessage({ type: 'GET_SYNC_PROGRESS' }).then((sp) => {
+          if (sp?.running) startSyncPolling()
+        }).catch(() => {})
+      })
     } catch {
       setState((s) => ({ ...s, loading: false }))
     }
-  }, [doHealthCheck, loadPlatformCounts])
+  }, [doHealthCheck, loadPlatformCounts, pollSyncProgress, startSyncPolling])
 
   useEffect(() => {
     loadData()
@@ -142,6 +181,7 @@ function App() {
 
     return () => {
       clearInterval(interval)
+      if (syncPollRef.current) clearInterval(syncPollRef.current)
       chrome.storage.onChanged.removeListener(handler)
     }
   }, [loadData, doHealthCheck])
@@ -213,6 +253,55 @@ function App() {
           </div>
         ) : (
           <span style={{ color: '#94a3b8' }}>非 AI 聊天页面</span>
+        )}
+
+        {state.activePlatform === 'chatgpt' && enabledPlatforms.includes('chatgpt') && (
+          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0' }}>
+            {state.syncProgress.running ? (
+              <div>
+                <div style={{ fontSize: '11px', color: '#374151', marginBottom: '4px' }}>
+                  {state.syncProgress.phase === 'listing'
+                    ? '正在列举全部对话…'
+                    : `正在同步 ${state.syncProgress.done}/${state.syncProgress.total}`}
+                  {state.syncProgress.failed > 0 && (
+                    <span style={{ color: '#ef4444' }}>（失败 {state.syncProgress.failed}）</span>
+                  )}
+                </div>
+                <div style={{ height: '4px', borderRadius: '2px', backgroundColor: '#e2e8f0', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: state.syncProgress.total > 0 ? `${Math.round((state.syncProgress.done / state.syncProgress.total) * 100)}%` : '30%',
+                    backgroundColor: '#3b82f6', transition: 'width 0.3s',
+                  }} />
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <button
+                  onClick={() => startHistorySync('chatgpt')}
+                  style={{ padding: '5px 10px', fontSize: '12px', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#eff6ff', color: '#2563eb' }}
+                  title="拉取并同步该账号的全部历史对话"
+                >
+                  ↻ 同步全部历史
+                </button>
+                {state.syncProgress.phase === 'done' && (
+                  <span style={{ fontSize: '11px', color: state.syncProgress.failed > 0 ? '#d97706' : '#16a34a' }}>
+                    已同步 {state.syncProgress.done} 条
+                    {state.syncProgress.failed > 0 && `，失败 ${state.syncProgress.failed}`}
+                  </span>
+                )}
+                {state.syncProgress.phase === 'error' && (
+                  <span style={{ fontSize: '11px', color: '#ef4444' }}>
+                    {state.syncProgress.error === 'no_token'
+                      ? '请先登录 ChatGPT'
+                      : state.syncProgress.error === 'unsupported'
+                      ? '该平台暂不支持'
+                      : '同步失败（详见日志）'}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -291,20 +380,20 @@ function App() {
                     onClick={() => handleExport(platform)}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '3px 6px', border: '1px solid #e2e8f0',
-                      borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer', color: '#6b7280',
+                      padding: '3px', border: 'none', background: 'none',
+                      cursor: 'pointer', color: '#9ca3af',
                     }}
                     title={`导出 ${platformLabels[platform]} 数据`}
                   >
-                    <ExportIcon size={13} />
+                    <ExportIcon size={14} />
                   </button>
                 )}
                 <button
                   onClick={() => chrome.tabs.create({ url: platformUrls[platform] })}
                   style={{
-                    padding: '2px 6px', fontSize: '11px', border: '1px solid #e2e8f0',
-                    borderRadius: '3px', backgroundColor: 'white', cursor: 'pointer',
-                    color: '#3b82f6',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '3px', border: 'none', background: 'none',
+                    cursor: 'pointer', color: '#9ca3af', fontSize: '13px',
                   }}
                   title={`打开 ${platformLabels[platform]}`}
                 >

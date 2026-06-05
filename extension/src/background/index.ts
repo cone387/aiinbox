@@ -1,6 +1,6 @@
 import { getAdapterByPlatform } from '../adapters'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG } from '../types'
-import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, CachedConversation } from '../storage/db'
+import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, getAllConversations, CachedConversation } from '../storage/db'
 import { exportAsJSON, exportAsMarkdown } from '../storage/export'
 
 // Platform URL detection patterns
@@ -16,6 +16,11 @@ let isCollecting = false
 let cachedHealth = { server: true, auth: true }
 let lastSyncTime: string | null = null
 let initPromise: Promise<void>
+
+type SyncPhase = 'idle' | 'listing' | 'fetching' | 'done' | 'error'
+let historySync: { running: boolean; platform: Platform | null; phase: SyncPhase; done: number; total: number; failed: number; error: string | null } = {
+  running: false, platform: null, phase: 'idle', done: 0, total: 0, failed: 0, error: null,
+}
 
 // Initialize
 chrome.runtime.onInstalled.addListener(() => {
@@ -158,6 +163,17 @@ function detectPlatformFromUrl(url: string): Platform | null {
     }
   }
   return null
+}
+
+// Normalize a conversation update time to epoch ms. ChatGPT's list API returns
+// update_time as either an ISO string or a unix-seconds float, depending on endpoint.
+function normalizeTime(t: string | number | undefined): number {
+  if (t == null) return 0
+  if (typeof t === 'number') return t < 1e12 ? t * 1000 : t
+  const parsed = Date.parse(t)
+  if (!isNaN(parsed)) return parsed
+  const num = Number(t)
+  return isNaN(num) ? 0 : (num < 1e12 ? num * 1000 : num)
 }
 
 // Logging
@@ -449,6 +465,85 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         break
       }
 
+      case 'SYNC_ALL_HISTORY': {
+        const platform = message.platform as Platform
+        if (!config.enabledPlatforms?.includes(platform)) {
+          sendResponse({ ok: false, error: 'platform_disabled' })
+          break
+        }
+        if (historySync.running) {
+          sendResponse({ ok: false, error: 'already_running' })
+          break
+        }
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+        const tab = tabs[0]
+        if (!tab?.id || detectPlatformFromUrl(tab.url || '') !== platform) {
+          sendResponse({ ok: false, error: 'not_on_platform' })
+          break
+        }
+        historySync = { running: true, platform, phase: 'listing', done: 0, total: 0, failed: 0, error: null }
+        updateSyncBadge()
+        try {
+          await chrome.tabs.sendMessage(tab.id, { type: 'SYNC_ALL_HISTORY', platform })
+          sendResponse({ ok: true })
+        } catch (err) {
+          historySync = { running: false, platform, phase: 'error', done: 0, total: 0, failed: 0, error: String(err) }
+          revertBadge()
+          sendResponse({ ok: false, error: String(err) })
+        }
+        break
+      }
+
+      case 'PLAN_HISTORY_SYNC': {
+        const platform = message.platform as Platform
+        const items: Array<{ id: string; updateTime?: string | number }> = message.items || []
+        const all = await getAllConversations()
+        const cachedUpdated = new Map<string, string>()
+        for (const c of all) {
+          if (c.platform === platform) cachedUpdated.set(c.conversationId, c.updatedAt)
+        }
+        const toFetch: string[] = []
+        for (const it of items) {
+          const local = cachedUpdated.get(it.id)
+          if (!local) { toFetch.push(it.id); continue }
+          const remoteMs = normalizeTime(it.updateTime)
+          const localMs = Date.parse(local) || 0
+          if (remoteMs > localMs) toFetch.push(it.id)
+        }
+        historySync.phase = 'fetching'
+        historySync.total = toFetch.length
+        historySync.done = 0
+        console.log(`[AI Inbox] History sync plan: ${items.length} listed, ${toFetch.length} to fetch`)
+        sendResponse({ toFetch })
+        break
+      }
+
+      case 'SYNC_PROGRESS': {
+        if (typeof message.done === 'number') historySync.done = message.done
+        if (typeof message.total === 'number') historySync.total = message.total
+        if (typeof message.failed === 'number') historySync.failed = message.failed
+        if (message.phase) historySync.phase = message.phase as SyncPhase
+        if (message.error) historySync.error = String(message.error)
+        if (message.phase === 'done' || message.phase === 'error') {
+          historySync.running = false
+          if (message.phase === 'done') {
+            console.log(`[AI Inbox] History sync complete: ${historySync.done}/${historySync.total} (failed ${historySync.failed})`)
+          } else {
+            console.warn(`[AI Inbox] History sync error: ${historySync.error}`)
+          }
+          revertBadge()
+        } else {
+          updateSyncBadge()
+        }
+        sendResponse({ ok: true })
+        break
+      }
+
+      case 'GET_SYNC_PROGRESS': {
+        sendResponse(historySync)
+        break
+      }
+
       default:
         sendResponse({ ok: false, error: 'unknown message type' })
     }
@@ -466,6 +561,44 @@ function updateIcon(status: 'active' | 'paused' | 'error'): void {
   }
   chrome.action.setBadgeBackgroundColor({ color: colors[status] })
   chrome.action.setBadgeText({ text: status === 'active' ? '' : status === 'paused' ? 'P' : '!' })
+}
+
+// Show live history-sync status on the toolbar badge so the user doesn't have
+// to open the popup. Listing → '...', fetching → percent, all on a blue badge.
+function updateSyncBadge(): void {
+  chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' })
+  if (historySync.phase === 'listing') {
+    chrome.action.setBadgeText({ text: '...' })
+    chrome.action.setTitle({ title: 'AI Inbox — 正在列举对话…' })
+  } else {
+    const pct = historySync.total > 0 ? Math.round((historySync.done / historySync.total) * 100) : 0
+    chrome.action.setBadgeText({ text: pct + '%' })
+    chrome.action.setTitle({
+      title: `AI Inbox — 同步中 ${historySync.done}/${historySync.total}` + (historySync.failed ? `（失败 ${historySync.failed}）` : ''),
+    })
+  }
+}
+
+// Restore the normal collecting/paused badge after a sync ends. If the sync had
+// failures or errored, briefly flag it on the badge before reverting.
+function revertBadge(): void {
+  const finishedWithProblem = historySync.phase === 'error' || historySync.failed > 0
+  if (finishedWithProblem) {
+    chrome.action.setBadgeBackgroundColor({ color: '#ef4444' })
+    chrome.action.setBadgeText({ text: '!' })
+    chrome.action.setTitle({
+      title: historySync.phase === 'error'
+        ? `AI Inbox — 同步失败：${historySync.error || 'unknown'}`
+        : `AI Inbox — 同步完成，${historySync.failed} 条失败`,
+    })
+    setTimeout(() => {
+      chrome.action.setTitle({ title: 'AI Inbox' })
+      updateIcon(isCollecting ? 'active' : 'paused')
+    }, 6000)
+  } else {
+    chrome.action.setTitle({ title: 'AI Inbox' })
+    updateIcon(isCollecting ? 'active' : 'paused')
+  }
 }
 
 // Upload a cached conversation to the server
