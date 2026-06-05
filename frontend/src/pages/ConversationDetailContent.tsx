@@ -82,7 +82,7 @@ export default function ConversationDetailContent({ conv, listCollapsed, onToggl
           <div className="conv-info">
             <div className="conv-title">{conv.title}</div>
             <div className="conv-meta">
-              {conv.platform} · {conv.message_count} 条消息 · {dayjs(conv.created_at).format('YYYY-MM-DD HH:mm')}
+              {conv.platform} · <span className="conv-platform-id" title="平台会话 ID（用于排查问题）" onClick={() => copyMessage(conv.conversation_id)}>{conv.conversation_id}</span> · {conv.message_count} 条消息 · {dayjs(conv.created_at).format('YYYY-MM-DD HH:mm')}
             </div>
           </div>
         </div>

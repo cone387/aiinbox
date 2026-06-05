@@ -420,9 +420,6 @@ html, body {
 
 /* Detail content */
 .conversation-detail {
-  padding: 0 32px;
-  max-width: 768px;
-  margin: 0 auto;
   width: 100%;
 }
 
@@ -430,7 +427,7 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 0;
+  padding: 16px 32px;
   border-bottom: 1px solid #e5e5e5;
   margin-bottom: 24px;
   position: sticky;
@@ -465,6 +462,16 @@ html, body {
   margin-top: 4px;
 }
 
+.conv-platform-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+
+.conv-platform-id:hover {
+  color: #555;
+  text-decoration: underline;
+}
+
 .export-btn {
   background: transparent;
   border: 1px solid #e5e5e5;
@@ -489,7 +496,10 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding-bottom: 32px;
+  padding: 0 32px 32px;
+  max-width: 768px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .message-row {
