@@ -1,0 +1,70 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Embed frontend into backend
+        run: |
+          rm -rf backend/internal/webui/dist
+          mkdir -p backend/internal/webui/dist
+          cp -r frontend/dist/. backend/internal/webui/dist/
+
+      - name: Build extension
+        working-directory: extension
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package extension
+        run: |
+          mkdir -p release
+          (cd extension/dist && zip -r "$GITHUB_WORKSPACE/release/aiinbox-extension-${GITHUB_REF_NAME}.zip" .)
+
+      - name: Build server binaries
+        working-directory: backend
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p ../release
+          build() {
+            echo "Building $1/$2 -> $3"
+            GOOS="$1" GOARCH="$2" go build -trimpath -ldflags "-s -w" -o "../release/$3" ./cmd/server
+          }
+          build windows amd64 "aiinbox-server-${GITHUB_REF_NAME}-windows-amd64.exe"
+          build linux   amd64 "aiinbox-server-${GITHUB_REF_NAME}-linux-amd64"
+          build darwin  amd64 "aiinbox-server-${GITHUB_REF_NAME}-darwin-amd64"
+          build darwin  arm64 "aiinbox-server-${GITHUB_REF_NAME}-darwin-arm64"
+
+      - name: Add example config
+        run: cp config.yaml release/config.yaml.example
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

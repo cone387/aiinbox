@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/cone387/aiinbox/backend/internal/middleware"
 	"github.com/cone387/aiinbox/backend/internal/search"
 	"github.com/cone387/aiinbox/backend/internal/services"
+	"github.com/cone387/aiinbox/backend/internal/webui"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -154,11 +156,31 @@ func main() {
 		protected.GET("/stats/timeline", statsHandler.GetTimeline)
 	}
 
-	// Serve frontend static files (SPA)
-	frontendDist := filepath.Join("frontend", "dist")
-	if _, err := os.Stat(frontendDist); err == nil {
-		fileServer := http.FileServer(http.Dir(frontendDist))
-		indexHTML := filepath.Join(frontendDist, "index.html")
+	// Serve frontend static files (SPA). Prefer an on-disk build when present
+	// (running from the repo root during development), otherwise fall back to
+	// the frontend embedded in the binary so a standalone executable still
+	// serves the web UI.
+	var webFS http.FileSystem
+	diskDist := filepath.Join("frontend", "dist")
+	if _, err := os.Stat(filepath.Join(diskDist, "index.html")); err == nil {
+		webFS = http.Dir(diskDist)
+	} else if sub, err := webui.Dist(); err == nil {
+		webFS = http.FS(sub)
+	}
+
+	if webFS != nil {
+		fileServer := http.FileServer(webFS)
+		serveIndex := func(c *gin.Context) {
+			f, err := webFS.Open("/index.html")
+			if err != nil {
+				c.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+			defer f.Close()
+			c.Status(http.StatusOK)
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			io.Copy(c.Writer, f)
+		}
 
 		r.NoRoute(func(c *gin.Context) {
 			// Skip API routes
@@ -167,17 +189,17 @@ func main() {
 				c.AbortWithStatus(http.StatusNotFound)
 				return
 			}
-			// Try to serve as static file
-			staticPath := filepath.Join(frontendDist, c.Request.URL.Path)
-			if _, err := os.Stat(staticPath); err == nil {
+			// Try to serve as a static file
+			if f, err := webFS.Open(c.Request.URL.Path); err == nil {
+				f.Close()
 				fileServer.ServeHTTP(c.Writer, c.Request)
 				return
 			}
 			// SPA fallback: serve index.html
-			c.File(indexHTML)
+			serveIndex(c)
 		})
 	} else {
-		log.Printf("Warning: frontend dist not found at %s, SPA routes will not be served", frontendDist)
+		log.Printf("Warning: no frontend build found (disk or embedded), SPA routes will not be served")
 	}
 
 	// Start server

@@ -1,11 +1,11 @@
-.PHONY: all build run dev test clean
+.PHONY: all build build-bundle run dev test clean
 
 # Backend
 backend-deps:
 	cd backend && go mod tidy
 
 backend-build:
-	cd backend && CGO_ENABLED=1 go build -o ../bin/aiinbox ./cmd/server
+	cd backend && CGO_ENABLED=0 go build -o ../bin/aiinbox ./cmd/server
 
 backend-run:
 	cd backend && go run ./cmd/server --config ../config.yaml
@@ -37,6 +37,14 @@ extension-build:
 deps: backend-deps frontend-deps extension-deps
 
 build: backend-build frontend-build extension-build
+
+# Self-contained single binary: build the frontend, embed it into the
+# server, then compile. Produces bin/aiinbox-server with the web UI baked in.
+build-bundle: frontend-build
+	rm -rf backend/internal/webui/dist
+	mkdir -p backend/internal/webui/dist
+	cp -r frontend/dist/. backend/internal/webui/dist/
+	cd backend && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../bin/aiinbox-server ./cmd/server
 
 dev: backend-run
 

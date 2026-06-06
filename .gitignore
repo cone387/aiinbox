@@ -15,6 +15,11 @@ node_modules/
 frontend/dist/
 extension/dist/
 
+# Embedded frontend build: CI copies the real build here before `go build`.
+# Keep only the placeholder so `go build` works locally without a frontend.
+backend/internal/webui/dist/*
+!backend/internal/webui/dist/index.html
+
 # Environment
 .env
 
