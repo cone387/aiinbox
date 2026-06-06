@@ -36,6 +36,8 @@ export interface ExtensionConfig {
   activeServerIndex: number
   enabledPlatforms: Platform[]
   isCollecting: boolean
+  // Pure offline: capture to local IndexedDB only, never contact a server.
+  offlineMode: boolean
 }
 
 export type ExtensionStatus = 'active' | 'paused' | 'error'
@@ -47,4 +49,5 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   activeServerIndex: 0,
   enabledPlatforms: ['chatgpt', 'gemini', 'tongyi', 'doubao'],
   isCollecting: true,
+  offlineMode: false,
 }

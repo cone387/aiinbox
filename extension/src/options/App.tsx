@@ -109,6 +109,10 @@ function App() {
     await chrome.runtime.sendMessage({ type: 'SAVE_CONFIG', config: next })
   }
 
+  function toggleOffline() {
+    persist({ ...config, offlineMode: !config.offlineMode })
+  }
+
   async function checkHealth(index: number, cfg?: ExtensionConfig) {
     const c = cfg || config
     const server = c.servers[index]
@@ -199,7 +203,27 @@ function App() {
         </div>
       )}
 
-      {/* Server list */}
+      {/* Offline mode toggle */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '14px 16px', marginBottom: '16px', border: config.offlineMode ? '1.5px solid #3b82f6' : '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: config.offlineMode ? '#f8faff' : 'white' }}>
+        <div>
+          <div style={{ fontWeight: 500, fontSize: '14px' }}>离线模式</div>
+          <div style={{ color: '#666', fontSize: '12px', marginTop: '2px' }}>
+            仅捕获到浏览器本地存储，不连接任何服务端。数据通过下方“数据导出”取出。
+          </div>
+        </div>
+        <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '22px', flexShrink: 0, cursor: 'pointer' }}>
+          <input type="checkbox" checked={config.offlineMode} onChange={toggleOffline} style={{ opacity: 0, width: 0, height: 0 }} />
+          <span style={{ position: 'absolute', inset: 0, borderRadius: '22px', transition: '0.2s', backgroundColor: config.offlineMode ? '#3b82f6' : '#cbd5e1' }} />
+          <span style={{ position: 'absolute', top: '3px', left: config.offlineMode ? '21px' : '3px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'white', transition: '0.2s' }} />
+        </label>
+      </div>
+
+      {/* Server list (hidden in offline mode) */}
+      {config.offlineMode ? (
+        <div style={{ padding: '12px 16px', marginBottom: '16px', border: '1px dashed #d1d5db', borderRadius: '8px', color: '#94a3b8', fontSize: '13px' }}>
+          离线模式已开启，无需配置服务端。
+        </div>
+      ) : (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {servers.map((server, index) => {
           const h = health[index] || { server: null, auth: null }
@@ -298,14 +322,21 @@ function App() {
           )
         })}
       </div>
+      )}
 
       {/* Data export */}
       <div style={{ marginTop: '28px' }}>
         <h2 style={{ fontSize: '16px', margin: '0 0 4px' }}>数据导出</h2>
         <p style={{ color: '#666', fontSize: '13px', margin: '0 0 12px' }}>
           导出本地缓存的对话数据（共 {cacheTotal.total} 条
-          {cacheTotal.pending > 0 && <span style={{ color: '#d97706' }}>，待同步 {cacheTotal.pending}</span>}
-          {cacheTotal.failed > 0 && <span style={{ color: '#ef4444' }}>，失败 {cacheTotal.failed}</span>}
+          {config.offlineMode ? (
+            <span style={{ color: '#3b82f6' }}>，已离线捕获</span>
+          ) : (
+            <>
+              {cacheTotal.pending > 0 && <span style={{ color: '#d97706' }}>，待同步 {cacheTotal.pending}</span>}
+              {cacheTotal.failed > 0 && <span style={{ color: '#ef4444' }}>，失败 {cacheTotal.failed}</span>}
+            </>
+          )}
           ）。
         </p>
 
@@ -343,8 +374,8 @@ function App() {
                 >
                   <PlatformIcon platform={platform} size={18} />
                   {platformLabels[platform]}
-                  <span style={{ color: c && c.synced === c.total ? '#16a34a' : '#94a3b8' }}>
-                    {c ? `${c.synced}/${c.total}` : 0}
+                  <span style={{ color: config.offlineMode ? '#94a3b8' : (c && c.synced === c.total ? '#16a34a' : '#94a3b8') }}>
+                    {c ? (config.offlineMode ? c.total : `${c.synced}/${c.total}`) : 0}
                   </span>
                 </button>
               )
@@ -389,7 +420,7 @@ function App() {
           >
             刷新统计
           </button>
-          {cacheTotal.failed > 0 && (
+          {!config.offlineMode && cacheTotal.failed > 0 && (
             <button
               onClick={handleRetryFailed}
               style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #fde68a', borderRadius: '6px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}
@@ -397,7 +428,7 @@ function App() {
               重试失败 ({cacheTotal.failed})
             </button>
           )}
-          {cacheTotal.synced > 0 && (
+          {!config.offlineMode && cacheTotal.synced > 0 && (
             <button
               onClick={handleClearSynced}
               style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#6b7280' }}

@@ -85,12 +85,13 @@ async function loadConfig(): Promise<void> {
     }
 
     const server = config.servers?.[config.activeServerIndex]
-    if (config.isCollecting && server?.url && server?.token) {
+    const canCollect = config.offlineMode || !!(server?.url && server?.token)
+    if (config.isCollecting && canCollect) {
       startCollecting()
     }
 
-    // Always start health check alarm if server is configured
-    if (server?.url && server?.token) {
+    // Server-dependent alarms only make sense when connected to a server.
+    if (!config.offlineMode && server?.url && server?.token) {
       startHealthCheck()
       startSyncAlarm()
     }
@@ -112,7 +113,8 @@ function startCollecting(): void {
   if (isCollecting) return
 
   const server = config.servers?.[config.activeServerIndex]
-  if (!server?.url || !server?.token) return
+  // Offline mode captures to local storage only, so no server is required.
+  if (!config.offlineMode && (!server?.url || !server?.token)) return
 
   isCollecting = true
   config.isCollecting = true
@@ -279,8 +281,10 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
             console.error(`[AI Inbox] Cache write failed:`, err)
           }
 
-          // Attempt immediate upload
-          await uploadConversation(cached)
+          // Attempt immediate upload (offline mode keeps it local-only).
+          if (!config.offlineMode) {
+            await uploadConversation(cached)
+          }
         } else if (message.body?.length > 100) {
           console.warn(`[AI Inbox] Parse failed for ${platform}: ${result.error}`)
         } else {
@@ -423,12 +427,18 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       case 'SAVE_CONFIG': {
         config = message.config as ExtensionConfig
         await chrome.storage.local.set({ config })
-        if (isCollecting) {
-          stopCollecting()
-          const server = config.servers?.[config.activeServerIndex]
-          if (server?.url && server?.token) {
-            startCollecting()
-          }
+        const server = config.servers?.[config.activeServerIndex]
+        const canCollect = config.offlineMode || !!(server?.url && server?.token)
+        // Reconcile the in-memory collecting flag against the new config.
+        if (config.isCollecting && canCollect) {
+          if (!isCollecting) { isCollecting = true; updateIcon('active') }
+        } else if (isCollecting) {
+          isCollecting = false
+          updateIcon('paused')
+        }
+        if (!config.offlineMode && server?.url && server?.token) {
+          startHealthCheck()
+          startSyncAlarm()
         }
         sendResponse({ ok: true })
         break
@@ -677,6 +687,7 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
 
 // Sync all pending/failed conversations
 async function syncPendingConversations(): Promise<void> {
+  if (config.offlineMode) return
   const server = config.servers?.[config.activeServerIndex]
   if (!server?.url || !server?.token) return
   if (!cachedHealth.server || !cachedHealth.auth) return

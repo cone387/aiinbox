@@ -208,6 +208,7 @@ function App() {
 
   const activeServer = state.config.servers?.[state.config.activeServerIndex || 0]
   const enabledPlatforms = state.config.enabledPlatforms || []
+  const offlineMode = state.config.offlineMode
 
   return (
     <div style={{ width: '340px', padding: '12px', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '13px' }}>
@@ -216,6 +217,9 @@ function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '15px', fontWeight: 600 }}>AI Inbox</span>
           <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: state.isCollecting ? '#22c55e' : '#9ca3af' }} />
+          {offlineMode && (
+            <span style={{ fontSize: '10px', fontWeight: 500, color: '#3b82f6', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '1px 6px' }}>离线</span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
@@ -262,6 +266,8 @@ function App() {
                 <div style={{ fontSize: '11px', color: '#374151', marginBottom: '4px' }}>
                   {state.syncProgress.phase === 'listing'
                     ? '正在列举全部对话…'
+                    : offlineMode
+                    ? `正在抓取 ${state.syncProgress.done}/${state.syncProgress.total}`
                     : `正在同步 ${state.syncProgress.done}/${state.syncProgress.total}`}
                   {state.syncProgress.failed > 0 && (
                     <span style={{ color: '#ef4444' }}>（失败 {state.syncProgress.failed}）</span>
@@ -282,11 +288,11 @@ function App() {
                   style={{ padding: '5px 10px', fontSize: '12px', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#eff6ff', color: '#2563eb' }}
                   title="拉取并同步该账号的全部历史对话"
                 >
-                  ↻ 同步全部历史
+                  ↻ {offlineMode ? '抓取全部历史' : '同步全部历史'}
                 </button>
                 {state.syncProgress.phase === 'done' && (
                   <span style={{ fontSize: '11px', color: state.syncProgress.failed > 0 ? '#d97706' : '#16a34a' }}>
-                    已同步 {state.syncProgress.done} 条
+                    {offlineMode ? '已抓取' : '已同步'} {state.syncProgress.done} 条
                     {state.syncProgress.failed > 0 && `，失败 ${state.syncProgress.failed}`}
                   </span>
                 )}
@@ -305,7 +311,8 @@ function App() {
         )}
       </div>
 
-      {/* Server status */}
+      {/* Server status (hidden in offline mode) */}
+      {!offlineMode && (
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -338,6 +345,7 @@ function App() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Platform toggles */}
       <div style={{ marginBottom: '10px' }}>
@@ -367,9 +375,15 @@ function App() {
                   </span>
                 </label>
                 {cache && cache.total > 0 ? (
-                  <span style={{ fontSize: '11px', color: cache.synced === cache.total ? '#16a34a' : '#d97706' }} title="本地缓存已同步 / 总数">
-                    {cache.synced}/{cache.total} 已同步
-                  </span>
+                  offlineMode ? (
+                    <span style={{ fontSize: '11px', color: '#3b82f6' }} title="本地已捕获">
+                      {cache.total} 已捕获
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', color: cache.synced === cache.total ? '#16a34a' : '#d97706' }} title="本地缓存已同步 / 总数">
+                      {cache.synced}/{cache.total} 已同步
+                    </span>
+                  )
                 ) : count > 0 ? (
                   <span style={{ fontSize: '11px', color: '#6b7280' }}>
                     {count} 条
