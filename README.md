@@ -25,7 +25,7 @@
 ### 从源码构建
 
 ```bash
-# 前置要求: Go 1.22+, Node.js 20+
+# 前置要求: Go 1.25+, Node.js 20+
 
 # 安装前端依赖并构建
 cd frontend && npm install && npm run build && cd ..
@@ -65,7 +65,9 @@ database:
   dsn: "./data/aiinbox.db"  # SQLite 路径或 PostgreSQL 连接串
 
 auth:
-  jwt_secret: "your-secret-key"
+  # 留空则首次运行自动生成强随机密钥，持久化到数据目录的 jwt_secret 文件。
+  # 多实例部署时可显式设置同一密钥。
+  jwt_secret: ""
 ```
 
 完整配置参见 [config.yaml](config.yaml)。
@@ -79,13 +81,22 @@ auth:
 
 ## 使用流程
 
-1. 启动后端服务：`./bin/aiinbox --config config.yaml`
-2. 启动前端：`cd frontend && npx vite`
-3. 打开 `http://localhost:9631` 注册账号并登录
-4. 在设置页生成 API Token
-5. Chrome 加载插件：`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选择 `extension/dist` 目录
-6. 点击插件图标 → ⚙️ 设置 → 填入服务地址 `http://localhost:9531` 和 Token → 保存
-7. 正常使用 AI 平台（ChatGPT/Gemini/千问/豆包），对话自动收集
+### 安装插件
+
+- **从 Releases 下载**：在 [Releases](https://github.com/cone387/aiinbox/releases/latest) 下载 `extension.zip` 并解压。
+- **Chrome 加载**：打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」→ 选择解压后的目录（或源码构建产物 `extension/dist`）。
+
+### 连接服务端
+
+插件默认指向官方服务，无需手动填 Token：
+
+1. 点击插件图标，按提示完成账号授权（授权页打开服务端的 `/authorize` 页面，登录后一键授权，自动回填凭据）。
+2. **自助部署本地服务**：启动后端（`./aiinbox` 或 `./bin/aiinbox --config config.yaml`）后，插件会自动探测 `http://localhost:9531`，检测到本地服务时会在弹窗内提示，点击「连接」即可切换到本地服务并完成授权。
+3. 正常使用 AI 平台（ChatGPT / Gemini / 千问 / 豆包），对话自动收集；离线时本地缓存，恢复连接后回传。
+
+### 浏览与搜索
+
+打开 `http://localhost:9631`（本地）或官方 Web 地址，注册/登录后浏览、搜索、导出对话记录。首次无数据时页面会引导你安装插件。
 
 ## 支持的平台
 
