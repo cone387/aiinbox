@@ -17,6 +17,37 @@ const platformOptions = [
   { value: 'doubao', label: '豆包' },
 ]
 
+const EXTENSION_DOWNLOAD_URL = 'https://github.com/cone387/aiinbox/releases/latest'
+
+function OnboardingCard() {
+  return (
+    <div className="panel-empty">
+      <div style={{ maxWidth: 420, textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>📥</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginBottom: 8 }}>
+          还没有对话，先安装浏览器插件
+        </div>
+        <div style={{ fontSize: 13, color: '#666', lineHeight: 1.7, marginBottom: 20, textAlign: 'left' }}>
+          <div>1. 下载并安装 AI Inbox 浏览器插件</div>
+          <div>2. 在插件设置中填入本服务地址并完成授权</div>
+          <div>3. 正常使用 ChatGPT / Gemini / 通义 / 豆包，对话会自动归档到这里</div>
+        </div>
+        <a
+          href={EXTENSION_DOWNLOAD_URL}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display: 'inline-block', padding: '8px 20px', fontSize: 13, fontWeight: 500,
+            color: '#fff', backgroundColor: '#1677ff', borderRadius: 6, textDecoration: 'none',
+          }}
+        >
+          下载浏览器插件
+        </a>
+      </div>
+    </div>
+  )
+}
+
 function getPlatformUrl(platform: string, conversationId: string): string | null {
   switch (platform) {
     case 'chatgpt': return `https://chatgpt.com/c/${conversationId}`
@@ -453,15 +484,19 @@ export default function ConversationPanel() {
         {convDetail ? (
           <ConversationDetailContent conv={convDetail} listCollapsed={listCollapsed} onToggleList={() => setListCollapsed(!listCollapsed)} wasUnread={wasUnread} />
         ) : activeItems.length === 0 && !activeLoading ? (
-          <div className="panel-empty">
-            <div className="panel-empty-text">
-              {isSearch
-                ? `没有搜索到 "${searchKeyword}"`
-                : selectedPlatform
-                  ? `${platformOptions.find(o => o.value === selectedPlatform)?.label} 暂无对话`
-                  : '选择平台中的对话开始'}
+          isSearch ? (
+            <div className="panel-empty">
+              <div className="panel-empty-text">没有搜索到 "{searchKeyword}"</div>
             </div>
-          </div>
+          ) : selectedPlatform ? (
+            <div className="panel-empty">
+              <div className="panel-empty-text">
+                {platformOptions.find(o => o.value === selectedPlatform)?.label} 暂无对话
+              </div>
+            </div>
+          ) : (
+            <OnboardingCard />
+          )
         ) : (
           <div className="panel-empty">
             <div className="panel-empty-text">选择一个对话开始</div>

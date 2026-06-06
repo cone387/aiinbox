@@ -324,7 +324,18 @@ function App() {
       </div>
       )}
 
-      {/* Data export */}
+      {/* Server setup hint: shown when the active server is configured but unreachable */}
+      {!config.offlineMode && health[config.activeServerIndex || 0]?.server === false && (
+        <div style={{ marginTop: '-4px', marginBottom: '16px', padding: '14px 16px', border: '1px solid #fde68a', borderRadius: '8px', backgroundColor: '#fffbeb' }}>
+          <div style={{ fontWeight: 500, fontSize: '13px', color: '#92400e', marginBottom: '6px' }}>连接不到服务端？</div>
+          <div style={{ fontSize: '12px', color: '#92400e', lineHeight: 1.7 }}>
+            <div>1. 从 <a href="https://github.com/cone387/aiinbox/releases/latest" target="_blank" rel="noreferrer" style={{ color: '#b45309', fontWeight: 500 }}>发布页</a> 下载对应平台的服务端程序（单文件，无需安装）。</div>
+            <div>2. 双击运行，它会在 <code style={{ background: '#fef3c7', padding: '0 4px', borderRadius: '3px' }}>http://localhost:9531</code> 启动并自带网页界面。</div>
+            <div>3. 把上方服务地址填为该地址，点“刷新”确认连通后再“授权登录”。</div>
+            <div style={{ marginTop: '4px', color: '#a16207' }}>或开启上方“离线模式”，仅本地捕获、随时导出，无需任何服务端。</div>
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: '28px' }}>
         <h2 style={{ fontSize: '16px', margin: '0 0 4px' }}>数据导出</h2>
         <p style={{ color: '#666', fontSize: '13px', margin: '0 0 12px' }}>

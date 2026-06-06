@@ -344,6 +344,15 @@ function App() {
             </button>
           </div>
         </div>
+        {state.serverOk === false && (
+          <div
+            onClick={() => chrome.runtime.openOptionsPage()}
+            style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', fontSize: '11px', color: '#b45309', cursor: 'pointer', lineHeight: 1.5 }}
+            title="打开设置查看如何启动服务端"
+          >
+            连接不到服务端 · 点此查看如何下载并启动 →
+          </div>
+        )}
       </div>
       )}
 
