@@ -21,11 +21,11 @@
     { pattern: '/qianwen/api/chat', method: 'POST', exclude: [], mode: 'turn' },
     // TODO: history GET rule — need real API path
 
-    // ===== Doubao (pending adaptation — need Playwright capture) =====
-    // TODO: verify turn POST pattern and add history GET pattern
-    { pattern: '/chat/api/chat', method: 'POST', exclude: [], mode: 'turn' },
-    { pattern: '/samantha/chat/completion', method: 'POST', exclude: [], mode: 'turn' },
-    // TODO: history GET rule — need real API path
+    // ===== Doubao (adapted via live capture) =====
+    // POST /chat/completion: new turn / streaming reply (SSE)
+    { pattern: '/chat/completion', method: 'POST', exclude: [], mode: 'turn' },
+    // POST /im/chain/single: load an existing conversation's messages (history)
+    { pattern: '/im/chain/single', method: 'POST', exclude: [], mode: 'history' },
   ]
 
   function shouldIntercept(url, method) {
