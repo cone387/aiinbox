@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import { ConversationDetail as ConvDetail } from '../types'
 import dayjs from 'dayjs'
+import 'highlight.js/styles/github.css'
 
 const CollapseIcon = ({ size = 18 }: { size?: number }) => (
   <svg viewBox="0 0 1024 1024" width={size} height={size} fill="currentColor">
@@ -20,6 +24,50 @@ interface Props {
   listCollapsed: boolean
   onToggleList: () => void
   wasUnread?: boolean
+}
+
+// ChatGPT embeds link/citation tokens delimited by private-use chars:
+// U+E200 start, U+E202 field separator, U+E201 end.
+// A url token is  U+E200 "url" U+E202 {title} U+E202 {dest} U+E201.
+// These render invisibly here, so the fields concatenate into garbage like
+// "urlwx-clihttps://...". Convert url tokens to markdown links, drop the rest.
+function cleanChatGPTTokens(text: string): string {
+  const start = String.fromCharCode(0xe200)
+  const end = String.fromCharCode(0xe201)
+  const sep = String.fromCharCode(0xe202)
+  const tokenRe = new RegExp(start + '(.*?)' + end, 'gs')
+  return text
+    .replace(tokenRe, (_m, inner: string) => {
+      const parts = inner.split(sep)
+      const type = parts[0]
+      if ((type === 'url' || type === 'navlist') && parts.length >= 3) {
+        const title = parts[1]
+        const dest = parts[2]
+        if (/^https?:\/\//.test(dest)) return `[${title}](${dest})`
+        return title // search-result reference: keep title text, no link
+      }
+      if (type === 'url' && parts.length === 2) return parts[1]
+      return '' // cite / video / other chips -> drop
+    })
+    .replace(/[-]/g, '') // strip any stray delimiters
+}
+
+function CodePre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy(e: React.MouseEvent<HTMLButtonElement>) {
+    const code = e.currentTarget.closest('pre')?.querySelector('code')
+    if (code) {
+      navigator.clipboard.writeText(code.textContent || '')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }
+  }
+  return (
+    <pre {...props}>
+      <button className="code-copy-btn" onClick={handleCopy}>{copied ? '✓' : '复制'}</button>
+      {children}
+    </pre>
+  )
 }
 
 export default function ConversationDetailContent({ conv, listCollapsed, onToggleList, wasUnread }: Props) {
@@ -43,25 +91,12 @@ export default function ConversationDetailContent({ conv, listCollapsed, onToggl
     setTimeout(() => setCopied(false), 1500)
   }
 
-  function copyCodeBlock(e: React.MouseEvent<HTMLDivElement>) {
-    const target = e.target as HTMLElement
-    if (target.classList.contains('code-copy-btn')) {
-      const pre = target.closest('pre')
-      const code = pre?.querySelector('code')
-      if (code) {
-        navigator.clipboard.writeText(code.textContent || '')
-        target.textContent = '✓'
-        setTimeout(() => { target.textContent = '复制' }, 1500)
-      }
-    }
-  }
-
   function exportMarkdown() {
     let md = `# ${conv.title}\n\n`
     md += `平台: ${conv.platform} | 时间: ${dayjs(conv.created_at).format('YYYY-MM-DD HH:mm')}\n\n---\n\n`
     for (const msg of conv.messages) {
       md += `**${msg.role === 'user' ? '用户' : 'AI'}** (${dayjs(msg.timestamp).format('HH:mm:ss')})\n\n`
-      md += `${msg.content}\n\n---\n\n`
+      md += `${cleanChatGPTTokens(msg.content)}\n\n---\n\n`
     }
     const blob = new Blob([md], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
@@ -103,7 +138,15 @@ export default function ConversationDetailContent({ conv, listCollapsed, onToggl
               {msg.role === 'user' ? (
                 <p className="user-text">{msg.content}</p>
               ) : (
-                <div className="markdown-body" onClick={copyCodeBlock} dangerouslySetInnerHTML={{ __html: simpleMarkdown(msg.content) }} />
+                <div className="markdown-body">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeHighlight]}
+                    components={{ pre: CodePre }}
+                  >
+                    {cleanChatGPTTokens(msg.content)}
+                  </ReactMarkdown>
+                </div>
               )}
             </div>
             <div className="message-footer">
@@ -119,70 +162,4 @@ export default function ConversationDetailContent({ conv, listCollapsed, onToggl
       </div>
     </div>
   )
-}
-
-// Simple markdown renderer
-function simpleMarkdown(text: string): string {
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  // Code blocks
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><button class="code-copy-btn">复制</button><code>$2</code></pre>')
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  // Italic
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  // Headers
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-  // Blockquotes (consecutive lines)
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
-  html = html.replace(/^&gt;\s*$/gm, '')
-  html = html.replace(/<\/blockquote>\n<blockquote>/g, '<br/>')
-  // Horizontal rule
-  html = html.replace(/^-{3,}$/gm, '<hr/>')
-  // Tables
-  html = html.replace(/(?:^|\n)((?:\|.+\|\n?)+)/g, (_match, tableBlock: string) => {
-    const rows = tableBlock.trim().split('\n').filter(r => r.trim())
-    if (rows.length < 2) return tableBlock
-    // Check if second row is separator
-    const isSep = /^\|[\s\-:|]+\|$/.test(rows[1].trim())
-    if (!isSep) return tableBlock
-    const headerCells = rows[0].split('|').filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim())
-    const thead = '<thead><tr>' + headerCells.map(c => `<th>${c}</th>`).join('') + '</tr></thead>'
-    const bodyRows = rows.slice(2)
-    const tbody = '<tbody>' + bodyRows.map(row => {
-      const cells = row.split('|').filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim())
-      return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>'
-    }).join('') + '</tbody>'
-    return `<table>${thead}${tbody}</table>`
-  })
-  // Unordered lists
-  html = html.replace(/(?:^|\n)((?:- .+\n?)+)/g, (_match, listBlock: string) => {
-    const items = listBlock.trim().split('\n').map(line => line.replace(/^- /, ''))
-    return '<ul>' + items.map(item => `<li>${item}</li>`).join('') + '</ul>'
-  })
-  // Paragraphs: double newline = new paragraph, single newline = <br/>
-  html = html.replace(/\n\n+/g, '</p><p>')
-  html = html.replace(/\n/g, '<br/>')
-  html = '<p>' + html + '</p>'
-  // Clean up empty paragraphs and paragraphs wrapping block elements
-  html = html.replace(/<p><\/p>/g, '')
-  html = html.replace(/<p>(<h[1-3]>)/g, '$1')
-  html = html.replace(/(<\/h[1-3]>)<\/p>/g, '$1')
-  html = html.replace(/<p>(<pre>)/g, '$1')
-  html = html.replace(/(<\/pre>)<\/p>/g, '$1')
-  html = html.replace(/<p>(<blockquote>)/g, '$1')
-  html = html.replace(/(<\/blockquote>)<\/p>/g, '$1')
-  html = html.replace(/<p>(<table>)/g, '$1')
-  html = html.replace(/(<\/table>)<\/p>/g, '$1')
-  html = html.replace(/<p>(<ul>)/g, '$1')
-  html = html.replace(/(<\/ul>)<\/p>/g, '$1')
-  html = html.replace(/<p>(<hr\/>)/g, '$1')
-  html = html.replace(/(<hr\/>)<\/p>/g, '$1')
-  return html
 }

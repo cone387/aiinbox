@@ -598,7 +598,7 @@ html, body {
   background: #f6f6f6;
   color: #24292e;
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
   margin: 12px 0;
   padding: 16px;
   border: 1px solid #e5e5e5;
