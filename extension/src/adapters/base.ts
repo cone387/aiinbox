@@ -13,6 +13,10 @@ export interface CapturedResponse {
   isComplete: boolean
   timestamp: string
   captureMode: CaptureMode
+  // The page's document.title at capture time. Some platforms (e.g. Doubao)
+  // don't carry a reliable conversation title in the response payload, so we
+  // fall back to the tab title.
+  pageTitle?: string
 }
 
 export interface ParseResult {

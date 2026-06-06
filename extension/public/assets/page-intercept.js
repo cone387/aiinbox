@@ -53,6 +53,7 @@
   }
 
   function sendToExtension(payload) {
+    if (payload && payload.pageTitle === undefined) payload.pageTitle = document.title
     window.postMessage({ source: 'aiinbox-page', type: 'RESPONSE_COMPLETE', payload: payload }, '*')
   }
 

@@ -252,6 +252,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           isComplete: message.isComplete ?? true,
           timestamp: new Date().toISOString(),
           captureMode,
+          pageTitle: message.pageTitle || '',
         })
 
         if (result.success && result.conversation) {

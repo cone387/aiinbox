@@ -47,6 +47,36 @@ export class DoubaoAdapter extends PlatformAdapter {
     return out
   }
 
+  // Extract a message's visible text across the two shapes the history API uses:
+  //   - assistant (content_type 9999): content_block holds block_type 10000 entries
+  //   - user (content_type 1): content_block is empty; the text lives in the
+  //     `content` field as a JSON string {"text":"..."}.
+  // As a final fallback, `content` may itself be a stringified content_block array.
+  private extractMessageText(m: any): string {
+    const fromBlocks = this.extractBlockText(m?.content_block)
+    if (fromBlocks) return fromBlocks
+
+    const raw = m?.content
+    if (typeof raw !== 'string' || !raw) return ''
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed.text === 'string') return parsed.text
+      if (Array.isArray(parsed)) return this.extractBlockText(parsed)
+    } catch {}
+    return ''
+  }
+
+  // Doubao's response payloads rarely carry a usable conversation title (the
+  // SSE_ACK omits conversation_info for the active conversation), so we fall
+  // back to the tab title, which reads "<real title> - 豆包". Strip the suffix
+  // and reject the placeholder titles shown before a conversation is named.
+  private titleFromPage(pageTitle?: string): string {
+    if (!pageTitle) return ''
+    let t = pageTitle.replace(/\s*[-–|]\s*豆包\s*$/, '').trim()
+    if (!t || t === '豆包' || t === '新对话') return ''
+    return t.slice(0, 50)
+  }
+
   // ===== Turn: SSE stream from /chat/completion =====
   // The assistant reply is streamed across three event kinds that must be
   // concatenated in order: STREAM_MSG_NOTIFY (initial block), STREAM_CHUNK with
@@ -59,6 +89,7 @@ export class DoubaoAdapter extends PlatformAdapter {
     let conversationId = ''
     let title = ''
     let userText = ''
+    let userTime: string | undefined
     let assistantText = ''
     let assistantTime: string | undefined
     let briefFallback = ''
@@ -85,6 +116,8 @@ export class DoubaoAdapter extends PlatformAdapter {
           if (msg?.user_type === 1) {
             const t = this.extractBlockText(msg.content_block)
             if (t) userText = t
+            const ct = msg?.create_time
+            if (typeof ct === 'number') userTime = new Date(ct * 1000).toISOString()
           }
           break
         }
@@ -121,8 +154,17 @@ export class DoubaoAdapter extends PlatformAdapter {
     // brief carries the fully assembled reply; use it only if streaming yielded nothing.
     if (!assistantText) assistantText = briefFallback
 
+    // The user message must sort before the assistant reply (backend orders by
+    // timestamp ASC). The SSE rarely omits FULL_MSG_NOTIFY, but when it does we
+    // derive the send time from the POST body, and as a last resort pin it just
+    // before the assistant so the turn never renders reply-first.
+    if (!userTime) userTime = this.extractUserTimeFromRequest(response.requestBody)
+    if (!userTime && assistantTime) {
+      userTime = new Date(new Date(assistantTime).getTime() - 1000).toISOString()
+    }
+
     const messages: RawMsg[] = []
-    if (userText) messages.push({ role: 'user', content: userText })
+    if (userText) messages.push({ role: 'user', content: userText, timestamp: userTime })
     if (assistantText) messages.push({ role: 'assistant', content: assistantText, timestamp: assistantTime })
 
     if (messages.length === 0) {
@@ -133,7 +175,7 @@ export class DoubaoAdapter extends PlatformAdapter {
       id: this.generateId(),
       platform: this.platform,
       conversationId: conversationId || this.generateId(),
-      title: title || userText.slice(0, 50) || 'Untitled',
+      title: title || this.titleFromPage(response.pageTitle) || userText.slice(0, 50) || 'Untitled',
       messages: messages.map((m) =>
         this.createMessage(this.mapRole(m.role), m.content, m.timestamp, response.isComplete)
       ),
@@ -152,36 +194,43 @@ export class DoubaoAdapter extends PlatformAdapter {
     }
 
     let conversationId = ''
-    const messages: RawMsg[] = []
+    // Carry index_in_conv so we can order reliably: create_time is only
+    // second-granular and collides within a turn (user and assistant share it),
+    // whereas index_in_conv strictly increases (user < its assistant reply).
+    const rows: { msg: RawMsg; order: number }[] = []
     for (const m of list) {
       if (!conversationId && m?.conversation_id) conversationId = String(m.conversation_id)
-      const content = this.extractBlockText(m?.content_block)
+      const content = this.extractMessageText(m)
       if (!content) continue
       const role = m?.user_type === 1 ? 'user' : 'assistant'
       const ctSec = Number(m?.create_time)
-      messages.push({
-        role,
-        content,
-        timestamp: Number.isFinite(ctSec) && ctSec > 0 ? new Date(ctSec * 1000).toISOString() : undefined,
+      const order = Number(m?.index_in_conv)
+      rows.push({
+        msg: {
+          role,
+          content,
+          timestamp: Number.isFinite(ctSec) && ctSec > 0 ? new Date(ctSec * 1000).toISOString() : undefined,
+        },
+        order: Number.isFinite(order) ? order : 0,
       })
     }
 
-    if (messages.length === 0) {
+    if (rows.length === 0) {
       return { success: false, error: 'No text messages in Doubao history response' }
     }
 
-    // The chain is returned newest-first; order by conversation index ascending.
-    messages.sort((a, b) => {
-      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0
-      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0
-      return ta - tb
-    })
+    // The chain is returned newest-first; order by index_in_conv ascending so
+    // each user message precedes its reply. The backend sorts by timestamp ASC
+    // and breaks same-second ties by insertion (rowid) order, so emitting in
+    // this order is what makes the turn render question-before-answer.
+    rows.sort((a, b) => a.order - b.order)
+    const messages = rows.map((r) => r.msg)
 
     const conversation: UnifiedConversation = {
       id: this.generateId(),
       platform: this.platform,
       conversationId: conversationId || this.generateId(),
-      title: messages.find((m) => m.role === 'user')?.content.slice(0, 50) || 'Untitled',
+      title: this.titleFromPage(response.pageTitle) || messages.find((m) => m.role === 'user')?.content.slice(0, 50) || 'Untitled',
       messages: messages.map((m) =>
         this.createMessage(this.mapRole(m.role), m.content, m.timestamp, true)
       ),
@@ -222,5 +271,17 @@ export class DoubaoAdapter extends PlatformAdapter {
       }
     } catch {}
     return ''
+  }
+
+  // The POST body carries the user's send time as option.create_time_ms (epoch ms),
+  // which predates the assistant reply — a reliable ordering key when the SSE
+  // dropped FULL_MSG_NOTIFY.
+  private extractUserTimeFromRequest(requestBody?: string): string | undefined {
+    if (!requestBody) return undefined
+    try {
+      const ms = JSON.parse(requestBody)?.option?.create_time_ms
+      if (typeof ms === 'number' && ms > 0) return new Date(ms).toISOString()
+    } catch {}
+    return undefined
   }
 }
