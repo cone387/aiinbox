@@ -1,5 +1,5 @@
 import { getAdapterByPlatform } from '../adapters'
-import { ExtensionConfig, Platform, DEFAULT_CONFIG } from '../types'
+import { ExtensionConfig, Platform, DEFAULT_CONFIG, LOCAL_SERVICE_URL } from '../types'
 import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, getAllConversations, CachedConversation } from '../storage/db'
 import { exportAsJSON, exportAsMarkdown } from '../storage/export'
 
@@ -339,6 +339,19 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         }
         await chrome.storage.local.set({ config })
         sendResponse({ enabledPlatforms: config.enabledPlatforms })
+        break
+      }
+
+      case 'PROBE_LOCAL': {
+        // Detect a self-hosted server on the user's machine so the popup can
+        // offer to connect. Reachability only — auth happens on user confirm.
+        let available = false
+        try {
+          const resp = await fetch(`${LOCAL_SERVICE_URL}/health`, { method: 'GET', signal: AbortSignal.timeout(2000) })
+          available = resp.ok
+        } catch {}
+        const activeUrl = config.servers?.[config.activeServerIndex]?.url
+        sendResponse({ available, localUrl: LOCAL_SERVICE_URL, alreadyActive: activeUrl === LOCAL_SERVICE_URL })
         break
       }
 

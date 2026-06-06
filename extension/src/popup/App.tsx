@@ -1,6 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS, DEFAULT_CONFIG } from '../types'
+import { Platform, ExtensionConfig, ExtensionStatus, PLATFORMS, DEFAULT_CONFIG, LOCAL_SERVICE_URL } from '../types'
 import { platformLabels, platformUrls, PlatformIcon, ExportIcon } from '../shared/platforms'
+
+const LOCAL_DISMISS_KEY = 'localDetectDismissedAt'
+const LOCAL_DISMISS_TTL = 7 * 24 * 60 * 60 * 1000 // re-prompt after a week
 
 interface CacheStat { total: number; pending: number; synced: number; failed: number }
 
@@ -17,6 +20,9 @@ interface PopupState {
   platformCounts: Record<string, number>
   cacheStats: { total: number; pending: number; synced: number; failed: number; lastSyncTime: string | null; byPlatform: Record<string, CacheStat> }
   syncProgress: SyncProgress
+  localDetect: { available: boolean; alreadyActive: boolean }
+  localDismissed: boolean
+  connectingLocal: boolean
 }
 
 function App() {
@@ -31,6 +37,9 @@ function App() {
     platformCounts: {},
     cacheStats: { total: 0, pending: 0, synced: 0, failed: 0, lastSyncTime: null, byPlatform: {} },
     syncProgress: { running: false, platform: null, phase: 'idle', done: 0, total: 0, failed: 0, error: null },
+    localDetect: { available: false, alreadyActive: false },
+    localDismissed: false,
+    connectingLocal: false,
   })
 
   const configRef = useRef(state.config)
@@ -116,6 +125,38 @@ function App() {
     } catch {}
   }
 
+  const probeLocal = useCallback(async () => {
+    try {
+      const [resp, stored] = await Promise.all([
+        chrome.runtime.sendMessage({ type: 'PROBE_LOCAL' }),
+        chrome.storage.local.get(LOCAL_DISMISS_KEY),
+      ])
+      const dismissedAt = stored?.[LOCAL_DISMISS_KEY] || 0
+      const dismissed = dismissedAt > 0 && Date.now() - dismissedAt < LOCAL_DISMISS_TTL
+      if (resp && typeof resp.available === 'boolean') {
+        setState((s) => ({ ...s, localDetect: { available: resp.available, alreadyActive: resp.alreadyActive }, localDismissed: dismissed }))
+      }
+    } catch {}
+  }, [])
+
+  async function connectLocal() {
+    setState((s) => ({ ...s, connectingLocal: true }))
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'START_AUTH', url: LOCAL_SERVICE_URL })
+      if (resp?.ok) {
+        await chrome.storage.local.remove(LOCAL_DISMISS_KEY)
+        await loadData()
+        await probeLocal()
+      }
+    } catch {}
+    setState((s) => ({ ...s, connectingLocal: false }))
+  }
+
+  async function dismissLocal() {
+    await chrome.storage.local.set({ [LOCAL_DISMISS_KEY]: Date.now() })
+    setState((s) => ({ ...s, localDismissed: true }))
+  }
+
   async function handleExport(platform?: Platform) {
     try {
       const resp = await chrome.runtime.sendMessage({
@@ -170,6 +211,7 @@ function App() {
 
   useEffect(() => {
     loadData()
+    probeLocal()
     const interval = setInterval(() => doHealthCheck(), 60000)
 
     const handler = (changes: Record<string, any>, namespace: string) => {
@@ -184,7 +226,7 @@ function App() {
       if (syncPollRef.current) clearInterval(syncPollRef.current)
       chrome.storage.onChanged.removeListener(handler)
     }
-  }, [loadData, doHealthCheck])
+  }, [loadData, doHealthCheck, probeLocal])
 
   async function toggleCollecting() {
     const response = await chrome.runtime.sendMessage({ type: 'TOGGLE_COLLECTING' })
@@ -245,6 +287,31 @@ function App() {
           </button>
         </div>
       </div>
+
+      {/* Local server detected: offer one-click connect (user-confirmed) */}
+      {!offlineMode && state.localDetect.available && !state.localDetect.alreadyActive && !state.localDismissed && (
+        <div style={{ padding: '10px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', marginBottom: '10px' }}>
+          <div style={{ fontSize: '12px', color: '#1e40af', fontWeight: 500, marginBottom: '2px' }}>发现本地服务</div>
+          <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+            检测到 {LOCAL_SERVICE_URL} 正在运行，是否连接并授权？
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={connectLocal}
+              disabled={state.connectingLocal}
+              style={{ padding: '4px 12px', fontSize: '12px', border: 'none', borderRadius: '4px', cursor: state.connectingLocal ? 'default' : 'pointer', backgroundColor: '#2563eb', color: 'white', fontWeight: 500 }}
+            >
+              {state.connectingLocal ? '连接中…' : '连接'}
+            </button>
+            <button
+              onClick={dismissLocal}
+              style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#64748b' }}
+            >
+              忽略
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Current page */}
       <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: '1px solid #e2e8f0' }}>

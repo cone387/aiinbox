@@ -42,9 +42,18 @@ export interface ExtensionConfig {
 
 export type ExtensionStatus = 'active' | 'paused' | 'error'
 
+// Official hosted service. Empty until the official deployment is live; once set,
+// fresh installs connect here by default. Self-hosting and local detection both
+// keep working regardless of this value.
+export const OFFICIAL_SERVICE_URL = ''
+
+// Conventional address of a self-hosted server running on the user's machine.
+// The popup probes this and offers a one-click connect when it's reachable.
+export const LOCAL_SERVICE_URL = 'http://localhost:9531'
+
 export const DEFAULT_CONFIG: ExtensionConfig = {
   servers: [
-    { url: 'http://localhost:9531', token: '', name: '本地服务', isDefault: true },
+    { url: OFFICIAL_SERVICE_URL, token: '', name: '官方服务', isDefault: true },
   ],
   activeServerIndex: 0,
   enabledPlatforms: ['chatgpt', 'gemini', 'tongyi', 'doubao'],
