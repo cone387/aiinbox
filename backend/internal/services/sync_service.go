@@ -78,9 +78,9 @@ func (s *SyncService) createConversation(userID uint, req *dto.ConversationSync)
 		ConversationID: req.ConversationID,
 		Title:          req.Title,
 		MessageCount:   len(req.Messages),
-		CreatedAt:      req.CreatedAt,
-		UpdatedAt:      req.UpdatedAt,
-		SyncedAt:       time.Now(),
+		CreatedAt:      req.CreatedAt.UTC(),
+		UpdatedAt:      req.UpdatedAt.UTC(),
+		SyncedAt:       time.Now().UTC(),
 	}
 
 	if err := s.DB.Create(&conv).Error; err != nil {
@@ -143,7 +143,9 @@ func (s *SyncService) updateConversation(existing *models.Conversation, req *dto
 		}
 	}
 
-	// Update conversation metadata without triggering GORM's auto-update of updated_at
+	// Update conversation metadata. updated_at is set explicitly from the
+	// platform's update time (req.UpdatedAt); GORM's autoUpdateTime is disabled
+	// on the model so .Updates never overwrites it with the local wall clock.
 	updates := map[string]interface{}{
 		"message_count": len(existingTimestamps) + len(newMessages),
 	}
@@ -151,10 +153,10 @@ func (s *SyncService) updateConversation(existing *models.Conversation, req *dto
 		updates["title"] = req.Title
 	}
 	if len(newMessages) > 0 {
-		updates["synced_at"] = time.Now()
+		updates["synced_at"] = time.Now().UTC()
 	}
 	if req.UpdatedAt.After(existing.UpdatedAt) {
-		updates["updated_at"] = req.UpdatedAt
+		updates["updated_at"] = req.UpdatedAt.UTC()
 	}
 
 	if err := s.DB.Model(existing).Updates(updates).Error; err != nil {
@@ -182,7 +184,7 @@ func (s *SyncService) logSync(userID uint, convID *uint, action, errMsg string) 
 }
 
 func (s *SyncService) updateSyncStatus(userID uint, platform string) {
-	now := time.Now()
+	now := time.Now().UTC()
 	var status models.SyncStatus
 	err := s.DB.Where("user_id = ? AND platform = ?", userID, platform).First(&status).Error
 	if err != nil {

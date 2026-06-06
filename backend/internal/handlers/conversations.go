@@ -212,7 +212,7 @@ func (h *ConversationHandler) MarkRead(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	id := c.Param("id")
 
-	now := time.Now()
+	now := time.Now().UTC()
 	result := h.DB.Model(&models.Conversation{}).
 		Where("user_id = ? AND id = ?", userID, id).
 		UpdateColumn("last_read_at", &now)
@@ -234,7 +234,7 @@ func (h *ConversationHandler) MarkAllRead(c *gin.Context) {
 	}
 	c.ShouldBindJSON(&req)
 
-	now := time.Now()
+	now := time.Now().UTC()
 	query := h.DB.Model(&models.Conversation{}).
 		Where("user_id = ? AND (last_read_at IS NULL OR synced_at > last_read_at)", userID)
 	if req.Platform != "" {

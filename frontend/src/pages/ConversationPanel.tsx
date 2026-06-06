@@ -64,7 +64,7 @@ export default function ConversationPanel() {
   const [params, setParams] = useState<ListParams>({
     page: 1,
     page_size: 30,
-    sort_by: 'created_at',
+    sort_by: 'updated_at',
     order: 'desc',
   })
 
@@ -416,7 +416,7 @@ export default function ConversationPanel() {
                   <div className="conv-list-body">
                     <span className="conv-list-title">{conv.title || 'Untitled'}</span>
                     <span className="conv-list-meta">
-                      {conv.message_count} 条 · {dayjs(conv.created_at).format('MM-DD HH:mm')}
+                      {conv.message_count} 条 · {dayjs(conv.updated_at).format('MM-DD HH:mm')}
                     </span>
                   </div>
                   {conv.has_unread && <span className="conv-unread-dot" />}

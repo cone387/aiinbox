@@ -10,7 +10,7 @@ type Conversation struct {
 	Title          string     `gorm:"size:500" json:"title"`
 	MessageCount   int        `gorm:"default:0" json:"message_count"`
 	CreatedAt      time.Time  `gorm:"index:idx_user_created;not null" json:"created_at"`
-	UpdatedAt      time.Time  `gorm:"not null" json:"updated_at"`
+	UpdatedAt      time.Time  `gorm:"not null;autoUpdateTime:false" json:"updated_at"`
 	SyncedAt       time.Time  `json:"synced_at"`
 	LastReadAt     *time.Time `json:"last_read_at"`
 	Messages       []Message  `gorm:"foreignKey:ConvID" json:"messages,omitempty"`
