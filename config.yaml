@@ -10,7 +10,9 @@ database:
   max_idle_conns: 5
 
 auth:
-  jwt_secret: "change-me-to-a-secure-secret-at-least-32-chars"
+  # Leave empty to auto-generate a strong secret on first run (persisted to the
+  # data directory as `jwt_secret`). Set your own for multi-instance deployments.
+  jwt_secret: ""
   jwt_expire_minutes: 1440
   api_token_expire_days: 30
   bcrypt_cost: 12

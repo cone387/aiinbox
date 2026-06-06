@@ -41,6 +41,20 @@ func main() {
 		}
 	}
 
+	// Ensure a strong signing key. The single-file binary ships without a config,
+	// so without this it would sign JWTs using the public placeholder secret.
+	secretDir := "data"
+	if cfg.Database.Driver == "sqlite" && cfg.Database.DSN != "" {
+		secretDir = filepath.Dir(cfg.Database.DSN)
+	} else if exePath, err := os.Executable(); err == nil {
+		secretDir = filepath.Join(filepath.Dir(exePath), "data")
+	}
+	if generated, err := config.EnsureJWTSecret(cfg, secretDir); err != nil {
+		log.Fatalf("Failed to ensure JWT secret: %v", err)
+	} else if generated {
+		log.Printf("Generated a new random JWT secret at %s (set auth.jwt_secret in config to override)", filepath.Join(secretDir, "jwt_secret"))
+	}
+
 	// Set Gin mode
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)

@@ -1,11 +1,20 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
+
+// DefaultJWTSecret is the placeholder shipped in the example config. It is
+// public, so the server must never actually sign tokens with it — EnsureJWTSecret
+// treats it (and an empty value) as "no secret set" and generates a real one.
+const DefaultJWTSecret = "change-me-to-a-secure-secret-at-least-32-chars"
 
 type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
@@ -82,7 +91,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("database.dsn", "./data/aiinbox.db")
 	v.SetDefault("database.max_open_conns", 10)
 	v.SetDefault("database.max_idle_conns", 5)
-	v.SetDefault("auth.jwt_secret", "change-me-to-a-secure-secret-at-least-32-chars")
+	v.SetDefault("auth.jwt_secret", "")
 	v.SetDefault("auth.jwt_expire_minutes", 1440)
 	v.SetDefault("auth.api_token_expire_days", 30)
 	v.SetDefault("auth.bcrypt_cost", 12)
@@ -134,4 +143,38 @@ func Load(configPath string) (*Config, error) {
 // Address returns the server listen address.
 func (c *Config) Address() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)
+}
+
+// EnsureJWTSecret guarantees the server signs tokens with a strong, stable key.
+// If the operator configured their own secret, it is left untouched. Otherwise
+// (empty or the public placeholder) a previously generated secret is loaded from
+// <dir>/jwt_secret, or a new random one is created and persisted there with
+// owner-only permissions. Returns true when a new secret was generated.
+func EnsureJWTSecret(cfg *Config, dir string) (bool, error) {
+	if cfg.Auth.JWTSecret != "" && cfg.Auth.JWTSecret != DefaultJWTSecret {
+		return false, nil
+	}
+
+	secretPath := filepath.Join(dir, "jwt_secret")
+	if data, err := os.ReadFile(secretPath); err == nil {
+		if s := strings.TrimSpace(string(data)); len(s) >= 32 {
+			cfg.Auth.JWTSecret = s
+			return false, nil
+		}
+	}
+
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return false, fmt.Errorf("generate jwt secret: %w", err)
+	}
+	secret := hex.EncodeToString(buf)
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false, fmt.Errorf("create secret dir: %w", err)
+	}
+	if err := os.WriteFile(secretPath, []byte(secret), 0o600); err != nil {
+		return false, fmt.Errorf("persist jwt secret: %w", err)
+	}
+	cfg.Auth.JWTSecret = secret
+	return true, nil
 }
