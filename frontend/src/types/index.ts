@@ -56,9 +56,16 @@ export interface StatsOverview {
   platform_msg_distribution: Record<string, number>
 }
 
-export interface TimelinePoint {
-  date: string
-  count: number
+export interface TimelineSeries {
+  platform: string
+  data: number[]
+}
+
+export interface TimelineResponse {
+  granularity: string
+  metric: string
+  dates: string[]
+  series: TimelineSeries[]
 }
 
 export interface HeatmapCell {

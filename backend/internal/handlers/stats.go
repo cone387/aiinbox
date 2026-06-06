@@ -30,11 +30,6 @@ type StatsOverview struct {
 	PlatformMsgDistribution map[string]int `json:"platform_msg_distribution"`
 }
 
-type TimelinePoint struct {
-	Date  string `json:"date"`
-	Count int    `json:"count"`
-}
-
 // parseTZOffset reads the tz_offset query param (minutes, JS getTimezoneOffset
 // convention: UTC+8 → -480) and returns the duration to add to a stored UTC
 // time to get local time: local = utc + (-tzOffset)min, so UTC+8 → +8h.
@@ -159,68 +154,99 @@ func (h *StatsHandler) GetTimeline(c *gin.Context) {
 		}
 	}
 
-	// Pull just the timestamp column for the chosen metric within the range.
-	var times []time.Time
+	// Pull (timestamp, platform) for the chosen metric within the range so we
+	// can break the trend down per platform.
+	type tsRow struct {
+		T        time.Time
+		Platform string
+	}
+	var rows []tsRow
 	if metric == "messages" {
-		var rows []struct{ Timestamp time.Time }
+		var rr []struct {
+			Timestamp time.Time
+			Platform  string
+		}
 		h.DB.Model(&models.Message{}).
-			Select("messages.timestamp as timestamp").
+			Select("messages.timestamp as timestamp, c.platform as platform").
 			Joins("JOIN conversations c ON c.id = messages.conv_id").
 			Where("c.user_id = ? AND messages.timestamp >= ? AND messages.timestamp <= ?", userID, startTime, endTime).
-			Scan(&rows)
-		for _, r := range rows {
-			times = append(times, r.Timestamp)
+			Scan(&rr)
+		for _, r := range rr {
+			rows = append(rows, tsRow{r.Timestamp, r.Platform})
 		}
 	} else {
-		var rows []struct{ CreatedAt time.Time }
+		var rr []struct {
+			CreatedAt time.Time
+			Platform  string
+		}
 		h.DB.Model(&models.Conversation{}).
-			Select("created_at").
+			Select("created_at, platform").
 			Where("user_id = ? AND created_at >= ? AND created_at <= ?", userID, startTime, endTime).
-			Scan(&rows)
-		for _, r := range rows {
-			times = append(times, r.CreatedAt)
+			Scan(&rr)
+		for _, r := range rr {
+			rows = append(rows, tsRow{r.CreatedAt, r.Platform})
 		}
 	}
 
-	counts := make(map[string]int)
-	for _, t := range times {
-		counts[bucketKey(t.Add(tzShift), granularity)]++
+	// counts[platform][bucket] and the set of buckets/platforms seen.
+	counts := make(map[string]map[string]int)
+	platformSet := make(map[string]bool)
+	bucketSet := make(map[string]bool)
+	for _, r := range rows {
+		key := bucketKey(r.T.Add(tzShift), granularity)
+		if counts[r.Platform] == nil {
+			counts[r.Platform] = make(map[string]int)
+		}
+		counts[r.Platform][key]++
+		platformSet[r.Platform] = true
+		bucketSet[key] = true
 	}
 
-	var points []TimelinePoint
+	// Build the shared date axis. Zero-fill day buckets for short spans; over
+	// long ranges (e.g. "全部" covering years) fall back to the sparse, sorted
+	// union of buckets that actually carry data.
+	var dates []string
 	ls := startTime.Add(tzShift)
 	le := endTime.Add(tzShift)
 	spanDays := int(le.Sub(ls).Hours()/24) + 1
-	// Zero-fill day buckets only for reasonably short spans; over very long
-	// ranges (e.g. "全部" covering years) the gap-fill would emit thousands of
-	// points, so fall back to sparse, sorted buckets like week/month.
 	if granularity == "day" && spanDays <= 120 {
 		day := time.Date(ls.Year(), ls.Month(), ls.Day(), 0, 0, 0, 0, time.UTC)
 		last := time.Date(le.Year(), le.Month(), le.Day(), 0, 0, 0, 0, time.UTC)
 		for !day.After(last) {
-			key := day.Format("2006-01-02")
-			points = append(points, TimelinePoint{Date: key, Count: counts[key]})
+			dates = append(dates, day.Format("2006-01-02"))
 			day = day.AddDate(0, 0, 1)
 		}
 	} else {
-		keys := make([]string, 0, len(counts))
-		for k := range counts {
-			keys = append(keys, k)
+		for k := range bucketSet {
+			dates = append(dates, k)
 		}
-		sortStrings(keys)
-		for _, k := range keys {
-			points = append(points, TimelinePoint{Date: k, Count: counts[k]})
-		}
+		sortStrings(dates)
+	}
+	if dates == nil {
+		dates = []string{}
 	}
 
-	if points == nil {
-		points = []TimelinePoint{}
+	platforms := make([]string, 0, len(platformSet))
+	for p := range platformSet {
+		platforms = append(platforms, p)
+	}
+	sortStrings(platforms)
+
+	// One aligned series per platform.
+	series := make([]gin.H, 0, len(platforms))
+	for _, p := range platforms {
+		data := make([]int, len(dates))
+		for i, d := range dates {
+			data[i] = counts[p][d]
+		}
+		series = append(series, gin.H{"platform": p, "data": data})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"granularity": granularity,
 		"metric":      metric,
-		"data":        points,
+		"dates":       dates,
+		"series":      series,
 	})
 }
 

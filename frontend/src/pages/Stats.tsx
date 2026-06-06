@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import { getOverview, getTimeline, getActivity, getInsights } from '../api/stats'
-import { StatsOverview, TimelinePoint, ActivityStats, InsightsStats } from '../types'
+import { StatsOverview, TimelineResponse, ActivityStats, InsightsStats } from '../types'
 
 // Brand-ish accent per platform so the pie reads at a glance and stays stable
 // across renders (ECharts would otherwise recolor by index).
@@ -45,7 +45,7 @@ const cardShadow = { boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }
 
 export default function Stats() {
   const [overview, setOverview] = useState<StatsOverview | null>(null)
-  const [timeline, setTimeline] = useState<TimelinePoint[]>([])
+  const [timeline, setTimeline] = useState<TimelineResponse | null>(null)
   const [activity, setActivity] = useState<ActivityStats | null>(null)
   const [insights, setInsights] = useState<InsightsStats | null>(null)
   const [granularity, setGranularity] = useState('day')
@@ -70,7 +70,7 @@ export default function Stats() {
         getInsights(),
       ])
       setOverview(ov)
-      setTimeline(tl.data)
+      setTimeline(tl)
       setActivity(ac)
       setInsights(ins)
     } catch {
@@ -140,14 +140,22 @@ export default function Stats() {
     ],
   }
 
-  const lineColor = trendMetric === 'messages' ? '#13c2c2' : '#1677ff'
+  // One line per platform so trends can be compared; the legend toggles series.
+  const trendDates = timeline?.dates || []
+  const trendSeries = timeline?.series || []
+  const trendHasData = trendSeries.some((s) => s.data.some((v) => v > 0))
   const lineOption = {
-    grid: { left: 12, right: 20, top: 24, bottom: 8, containLabel: true },
+    grid: { left: 12, right: 20, top: 40, bottom: 8, containLabel: true },
     tooltip: { trigger: 'axis' },
+    legend: {
+      top: 0,
+      icon: 'circle',
+      data: trendSeries.map((s) => platformLabel(s.platform)),
+    },
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: timeline.map((t) => t.date),
+      data: trendDates,
       axisLine: { lineStyle: { color: '#d9d9d9' } },
       axisLabel: { color: '#8c8c8c' },
     },
@@ -156,26 +164,15 @@ export default function Stats() {
       splitLine: { lineStyle: { color: '#f0f0f0' } },
       axisLabel: { color: '#8c8c8c' },
     },
-    series: [
-      {
-        type: 'line',
-        data: timeline.map((t) => t.count),
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { width: 3, color: lineColor },
-        itemStyle: { color: lineColor },
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: trendMetric === 'messages' ? 'rgba(19,194,194,0.28)' : 'rgba(22,119,255,0.28)' },
-              { offset: 1, color: trendMetric === 'messages' ? 'rgba(19,194,194,0.02)' : 'rgba(22,119,255,0.02)' },
-            ],
-          },
-        },
-      },
-    ],
+    series: trendSeries.map((s, i) => ({
+      name: platformLabel(s.platform),
+      type: 'line',
+      data: s.data,
+      smooth: true,
+      showSymbol: false,
+      lineStyle: { width: 2.5, color: platformColor(s.platform, i) },
+      itemStyle: { color: platformColor(s.platform, i) },
+    })),
   }
 
   // Usage-habits heatmap: 7 weekdays × 24 hours.
@@ -361,7 +358,7 @@ export default function Stats() {
               </div>
             }
           >
-            {timeline.length ? (
+            {trendHasData ? (
               <ReactECharts option={lineOption} style={{ height: 320 }} notMerge />
             ) : (
               <Empty style={{ padding: '90px 0' }} description="暂无数据" />

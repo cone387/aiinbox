@@ -1,5 +1,5 @@
 import client from './client'
-import { StatsOverview, TimelinePoint, ActivityStats, InsightsStats } from '../types'
+import { StatsOverview, TimelineResponse, ActivityStats, InsightsStats } from '../types'
 
 // JS getTimezoneOffset: UTC+8 → -480. The backend negates this to shift stored
 // UTC timestamps into the caller's local zone before bucketing.
@@ -18,7 +18,7 @@ export async function getTimeline(params: {
   range?: string
   start_time?: string
   end_time?: string
-}): Promise<{ granularity: string; metric: string; data: TimelinePoint[] }> {
+}): Promise<TimelineResponse> {
   const { data } = await client.get('/stats/timeline', {
     params: { ...params, tz_offset: tzOffset() },
   })
