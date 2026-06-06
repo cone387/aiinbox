@@ -51,11 +51,36 @@ export interface StatsOverview {
   total_messages: number
   this_week_new: number
   platform_distribution: Record<string, number>
+  avg_messages_per_conv: number
+  unread_count: number
+  platform_msg_distribution: Record<string, number>
 }
 
 export interface TimelinePoint {
   date: string
   count: number
+}
+
+export interface HeatmapCell {
+  weekday: number
+  hour: number
+  count: number
+}
+
+export interface ActivityStats {
+  by_hour: number[]
+  by_weekday: number[]
+  heatmap: HeatmapCell[]
+}
+
+export interface InsightsStats {
+  user_messages: number
+  assistant_messages: number
+  user_chars: number
+  assistant_chars: number
+  avg_user_chars: number
+  avg_assistant_chars: number
+  platform_avg_reply_length: Record<string, number>
 }
 
 export interface TokenPair {

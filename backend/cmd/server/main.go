@@ -168,6 +168,8 @@ func main() {
 		// Stats routes
 		protected.GET("/stats/overview", statsHandler.GetOverview)
 		protected.GET("/stats/timeline", statsHandler.GetTimeline)
+		protected.GET("/stats/activity", statsHandler.GetActivity)
+		protected.GET("/stats/insights", statsHandler.GetInsights)
 	}
 
 	// Serve frontend static files (SPA). Prefer an on-disk build when present
