@@ -57,6 +57,20 @@
     window.postMessage({ source: 'aiinbox-page', type: 'RESPONSE_COMPLETE', payload: payload }, '*')
   }
 
+  // Doubao's /im/* endpoints carry session-stable device/web ids in the query
+  // string and authenticate via cookies. We stash the query string of any
+  // observed /im/ request so full-sync can replay recent_conv / chain/single
+  // with the right params (these fire on page load, so it's set before sync).
+  var doubaoImQuery = ''
+  function rememberImQuery(url) {
+    try {
+      if (typeof url === 'string' && url.indexOf('/im/') !== -1) {
+        var qi = url.indexOf('?')
+        if (qi !== -1) doubaoImQuery = url.substring(qi)
+      }
+    } catch (e) {}
+  }
+
   var originalFetch = window.fetch
   window.fetch = function () {
     var args = arguments
@@ -64,6 +78,8 @@
     var init = args[1]
     var url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input && input.url ? input.url : ''))
     var method = (init && init.method) ? init.method.toUpperCase() : 'GET'
+
+    rememberImQuery(url)
 
     var captureMode = shouldIntercept(url, method)
     if (!captureMode) {
@@ -157,6 +173,7 @@
   XMLHttpRequest.prototype.open = function (method, url) {
     this._aiinbox_url = url ? url.toString() : ''
     this._aiinbox_method = method ? method.toUpperCase() : 'GET'
+    rememberImQuery(this._aiinbox_url)
     return originalOpen.apply(this, arguments)
   }
 
@@ -312,12 +329,13 @@
     syncThrottle = SYNC_THROTTLE_MS
     syncFailed = 0
 
-    if (platform !== 'chatgpt') {
-      postProgress({ phase: 'error', error: 'unsupported' })
-      syncRunning = false
-      return
-    }
+    if (platform === 'chatgpt') { runChatGPTSync(); return }
+    if (platform === 'doubao') { runDoubaoSync(); return }
+    postProgress({ phase: 'error', error: 'unsupported' })
+    syncRunning = false
+  }
 
+  function runChatGPTSync() {
     syncLog('开始同步 ChatGPT 全部历史')
     postProgress({ phase: 'listing', done: 0, total: 0, failed: 0 })
 
@@ -332,7 +350,7 @@
         syncLog('共列举到 ' + items.length + ' 条对话，请求增量计划…')
         // Ask background which ones actually need fetching (incremental).
         // Return the chain so a plan timeout/rejection reaches the outer catch.
-        return requestPlan(platform, items).then(function (toFetch) {
+        return requestPlan('chatgpt', items).then(function (toFetch) {
           var ids = toFetch || []
           syncLog('需要拉取 ' + ids.length + ' 条（其余已是最新）')
           postProgress({ phase: 'fetching', done: 0, total: ids.length, failed: 0 })
@@ -355,7 +373,7 @@
               if (res && res.ok && res.text) {
                 sendToExtension({
                   requestId: 'sync_' + Date.now() + '_' + i,
-                  platform: platform,
+                  platform: 'chatgpt',
                   url: '/backend-api/conversation/' + id,
                   body: res.text,
                   requestBody: '',
@@ -377,6 +395,248 @@
         postProgress({ phase: 'error', error: String(err) })
         syncRunning = false
       })
+    })
+  }
+
+  // ===== Doubao full sync =====
+  // Replays the page's own cmd-protocol XHRs (cookie-authenticated, no signing):
+  //   recent_conv (cmd 3200) lists conversations; chain/single (cmd 3100) pulls
+  //   a conversation's messages. Both reuse the observed /im/ query string.
+  function doubaoHeaders() {
+    return {
+      'Content-Type': 'application/json; encoding=utf-8',
+      'Agw-Js-Conv': 'str',
+      'Accept': 'application/json, text/plain, */*',
+    }
+  }
+
+  function uuid() {
+    return (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : (Date.now() + '-' + Math.random().toString(36).slice(2))
+  }
+
+  // Incremental freshness marker for a conversation, in epoch seconds.
+  // Doubao's conversation.update_time is STALE (it does not advance when new
+  // messages arrive). The reliable signal is conv_version, whose high digits
+  // encode the newest message's create_time: floor(conv_version / 1e6) equals
+  // that create_time, which is exactly what the adapter stores as updatedAt —
+  // so unchanged conversations compare equal and get skipped. Falls back to
+  // update_time only if conv_version is missing/unparseable.
+  function doubaoFreshness(c) {
+    var cv = Number(c && c.conv_version)
+    if (isFinite(cv) && cv > 0) {
+      var sec = Math.floor(cv / 1e6)
+      if (sec > 1e9) return sec
+    }
+    return c && c.update_time
+  }
+
+  // List every conversation, paginating via next_conv_version until has_more is
+  // false. Returns [{ id, name, updateTime }].
+  function doubaoListAll() {
+    var items = []
+    var seenIds = {}
+    var seenVersions = {}
+    // Pagination, verified by live replay against /im/chain/recent_conv:
+    //   - The cursor is conv_version, sent as a NUMBER. The string '0' (and any
+    //     string cursor) makes the backend return 712010702 (系统内部异常) with an
+    //     empty body. conv_version values are ~1.7e15, well under 2^53, so they
+    //     round-trip exactly as JS numbers.
+    //   - First page: conv_version 0, direction 3 → newest 50.
+    //   - Older pages: conv_version = previous next_conv_version, direction 1.
+    //     direction 3/2/4 just re-return the newest 50 and never advance.
+    //   - The boundary conversation repeats across pages (cursor is inclusive),
+    //     so dedup by conversation_id.
+    var convVersion = 0
+    var direction = 3
+
+    function step(retry) {
+      var body = JSON.stringify({
+        cmd: 3200,
+        uplink_body: {
+          pull_recent_conv_chain_uplink_body: {
+            limit: 50, message_count_per_conv: 0, api_version: 1,
+            conv_version: convVersion, direction: direction,
+            option: { not_need_message: true, need_complete_conversation: true },
+          },
+        },
+        sequence_id: uuid(), channel: 2, version: '1',
+      })
+      return originalFetch('/im/chain/recent_conv' + doubaoImQuery, {
+        method: 'POST', headers: doubaoHeaders(), body: body, credentials: 'include',
+      }).then(function (r) {
+        if (r.status === 429) {
+          retry = retry || 0
+          if (retry < 4) {
+            var wait = Math.min(2000 * Math.pow(2, retry), 30000)
+            syncLog('列举对话 429 限流，' + Math.round(wait / 1000) + 's 后重试', 'WARN')
+            return sleep(wait).then(function () { return step(retry + 1) })
+          }
+          syncLog('列举对话多次 429 后中止，已收集 ' + items.length + ' 条', 'ERROR')
+          return items
+        }
+        if (!r.ok) {
+          syncLog('列举对话失败 HTTP ' + r.status, 'ERROR')
+          return items
+        }
+        return r.json().then(function (j) {
+          var b = j && j.downlink_body && j.downlink_body.pull_recent_conv_chain_downlink_body
+          if (!b) {
+            syncLog('列举对话异常 code=' + (j && j.status_code), 'ERROR')
+            return items
+          }
+          var cells = b.cells || []
+          for (var i = 0; i < cells.length; i++) {
+            var c = cells[i] && cells[i].conversation
+            if (c && c.conversation_id) {
+              var id = String(c.conversation_id)
+              if (seenIds[id]) continue
+              seenIds[id] = true
+              items.push({ id: id, name: c.name || '', updateTime: doubaoFreshness(c) })
+            }
+          }
+          postProgress({ phase: 'listing', done: items.length, total: 0, failed: 0 })
+          var nv = Number(b.next_conv_version)
+          // Stop on no-more, empty page, a non-finite cursor, or a repeated cursor.
+          if (b.has_more && cells.length > 0 && isFinite(nv) && nv > 0 && !seenVersions[nv]) {
+            seenVersions[nv] = true
+            convVersion = nv
+            direction = 1
+            return sleep(syncThrottle).then(function () { return step(0) })
+          }
+          return items
+        })
+      })
+    }
+    return step(0)
+  }
+
+  // Pull all messages of one conversation, paginating older pages by anchor_index.
+  // Each page is forwarded as a history capture; the backend merges by
+  // conversation_id (and dedups messages), so multiple pages are safe.
+  // pageTitle carries the real conversation name so the adapter doesn't fall
+  // back to the currently-open tab's title.
+  function doubaoFetchConversation(item) {
+    var convId = item.id
+    var limit = 50
+    var page = 0
+
+    function pull(anchorIndex, retry) {
+      var body = JSON.stringify({
+        cmd: 3100,
+        uplink_body: {
+          pull_singe_chain_uplink_body: {
+            conversation_id: convId, anchor_index: anchorIndex, conversation_type: 3,
+            direction: 1, limit: limit, ext: {}, filter: { index_list: [] },
+          },
+        },
+        sequence_id: uuid(), channel: 2, version: '1',
+      })
+      return originalFetch('/im/chain/single' + doubaoImQuery, {
+        method: 'POST', headers: doubaoHeaders(), body: body, credentials: 'include',
+      }).then(function (r) {
+        if (r.status === 429) {
+          syncThrottle = Math.min(Math.round(syncThrottle * 1.5), 8000)
+          retry = retry || 0
+          if (retry < 4) {
+            var wait = Math.min(2000 * Math.pow(2, retry), 30000)
+            syncLog('429 限流，' + Math.round(wait / 1000) + 's 后重试，节流升至 ' + syncThrottle + 'ms', 'WARN')
+            return sleep(wait).then(function () { return pull(anchorIndex, retry + 1) })
+          }
+          syncLog('对话 ' + convId + ' 多次 429 后放弃', 'ERROR')
+          return { ok: false }
+        }
+        if (!r.ok) {
+          syncLog('对话 ' + convId + ' 拉取失败 HTTP ' + r.status, 'ERROR')
+          return { ok: false }
+        }
+        return r.text().then(function (t) {
+          sendToExtension({
+            requestId: 'sync_' + Date.now() + '_' + convId + '_' + page,
+            platform: 'doubao',
+            url: '/im/chain/single',
+            body: t,
+            requestBody: '',
+            isComplete: true,
+            captureMode: 'history',
+            pageTitle: item.name || '',
+          })
+          page++
+
+          var count = 0
+          var minIndex = null
+          try {
+            var j = JSON.parse(t)
+            var msgs = (j.downlink_body && j.downlink_body.pull_singe_chain_downlink_body
+              && j.downlink_body.pull_singe_chain_downlink_body.messages) || []
+            count = msgs.length
+            for (var i = 0; i < msgs.length; i++) {
+              var idx = Number(msgs[i].index_in_conv)
+              if (isFinite(idx) && (minIndex === null || idx < minIndex)) minIndex = idx
+            }
+          } catch (e) {}
+
+          // A full page that doesn't reach index 1 means older messages remain.
+          if (count >= limit && minIndex !== null && minIndex > 1) {
+            return sleep(syncThrottle).then(function () { return pull(minIndex - 1, 0) })
+          }
+          return { ok: true }
+        })
+      }).catch(function (err) {
+        syncLog('对话 ' + convId + ' 网络错误: ' + String(err), 'ERROR')
+        return { ok: false }
+      })
+    }
+    return pull(9007199254740991, 0)
+  }
+
+  function runDoubaoSync() {
+    if (!doubaoImQuery) {
+      syncLog('未捕获到豆包接口参数，请刷新页面后重试', 'ERROR')
+      postProgress({ phase: 'error', error: 'no_params' })
+      syncRunning = false
+      return
+    }
+
+    syncLog('开始同步 豆包 全部历史')
+    postProgress({ phase: 'listing', done: 0, total: 0, failed: 0 })
+
+    doubaoListAll().then(function (items) {
+      syncLog('共列举到 ' + items.length + ' 条对话，请求增量计划…')
+      var byId = {}
+      for (var k = 0; k < items.length; k++) byId[items[k].id] = items[k]
+      return requestPlan('doubao', items).then(function (toFetch) {
+        var ids = toFetch || []
+        syncLog('需要拉取 ' + ids.length + ' 条（其余已是最新）')
+        postProgress({ phase: 'fetching', done: 0, total: ids.length, failed: 0 })
+        if (ids.length === 0) {
+          postProgress({ phase: 'done', done: 0, total: 0, failed: 0 })
+          syncRunning = false
+          return
+        }
+
+        var i = 0
+        function next() {
+          if (i >= ids.length) {
+            syncLog('同步完成：成功 ' + (ids.length - syncFailed) + ' / ' + ids.length + '，失败 ' + syncFailed, syncFailed ? 'WARN' : 'INFO')
+            postProgress({ phase: 'done', done: ids.length, total: ids.length, failed: syncFailed })
+            syncRunning = false
+            return
+          }
+          var item = byId[ids[i]] || { id: ids[i], name: '' }
+          doubaoFetchConversation(item).then(function (res) {
+            if (!res || !res.ok) syncFailed++
+            i++
+            postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })
+            sleep(syncThrottle).then(next)
+          })
+        }
+        next()
+      })
+    }).catch(function (err) {
+      syncLog('同步出错: ' + String(err), 'ERROR')
+      postProgress({ phase: 'error', error: String(err) })
+      syncRunning = false
     })
   }
 

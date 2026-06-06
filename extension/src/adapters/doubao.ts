@@ -73,7 +73,7 @@ export class DoubaoAdapter extends PlatformAdapter {
   private titleFromPage(pageTitle?: string): string {
     if (!pageTitle) return ''
     let t = pageTitle.replace(/\s*[-–|]\s*豆包\s*$/, '').trim()
-    if (!t || t === '豆包' || t === '新对话') return ''
+    if (!t || t === '豆包' || t === '新对话' || t.includes('字节跳动')) return ''
     return t.slice(0, 50)
   }
 
