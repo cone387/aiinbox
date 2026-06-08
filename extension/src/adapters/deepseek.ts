@@ -217,6 +217,32 @@ export class DeepSeekAdapter extends PlatformAdapter {
       const role = (msg.role || '').toUpperCase()
       if (role === 'SYSTEM') continue
 
+      // Format A: direct content field (history API)
+      //   { role: "USER", content: "...", inserted_at: 1234567890.123 }
+      // Format B: fragments array (turn SSE initial payload)
+      //   { role: "USER", fragments: [{type: "REQUEST", content: "..."}] }
+      if (typeof msg.content === 'string' && msg.content.length > 0) {
+        if (role === 'USER') {
+          messages.push({
+            role: 'user',
+            content: msg.content,
+            timestamp: msg.inserted_at
+              ? new Date(msg.inserted_at * 1000).toISOString()
+              : undefined,
+          })
+        } else if (role === 'ASSISTANT') {
+          messages.push({
+            role: 'assistant',
+            content: msg.content,
+            timestamp: msg.inserted_at
+              ? new Date(msg.inserted_at * 1000).toISOString()
+              : undefined,
+          })
+        }
+        // Skip thinking_content and tips
+        continue
+      }
+
       const fragments = msg.fragments
       if (!Array.isArray(fragments)) continue
 
@@ -225,9 +251,6 @@ export class DeepSeekAdapter extends PlatformAdapter {
         const content = typeof frag.content === 'string' ? frag.content : ''
         if (!content) continue
 
-        // REQUEST = user message, RESPONSE = assistant message
-        // THINK = thinking content (skip for main conversation)
-        // TIP = disclaimer (skip)
         if (fragType === 'REQUEST' && role === 'USER') {
           messages.push({
             role: 'user',
@@ -245,7 +268,6 @@ export class DeepSeekAdapter extends PlatformAdapter {
               : undefined,
           })
         }
-        // Skip THINK and TIP fragments
       }
     }
 
