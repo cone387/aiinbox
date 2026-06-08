@@ -9,6 +9,7 @@ const PLATFORM_PATTERNS: Record<string, string[]> = {
   gemini: ['gemini.google.com'],
   tongyi: ['tongyi.aliyun.com', 'qianwen.aliyun.com'],
   doubao: ['doubao.com'],
+  deepseek: ['chat.deepseek.com'],
 }
 
 let config: ExtensionConfig = { ...DEFAULT_CONFIG }
@@ -78,6 +79,11 @@ async function loadConfig(): Promise<void> {
         await chrome.storage.local.set({ config })
       } else {
         config = cfg as ExtensionConfig
+        // Ensure new platforms are added to existing configs
+        if (!config.enabledPlatforms?.includes('deepseek')) {
+          config.enabledPlatforms = [...(config.enabledPlatforms || []), 'deepseek']
+          await chrome.storage.local.set({ config })
+        }
       }
     } else {
       await chrome.storage.local.set({ config: DEFAULT_CONFIG })

@@ -326,7 +326,7 @@ function App() {
           <span style={{ color: '#94a3b8' }}>非 AI 聊天页面</span>
         )}
 
-        {(state.activePlatform === 'chatgpt' || state.activePlatform === 'doubao') && enabledPlatforms.includes(state.activePlatform) && (
+        {(state.activePlatform === 'chatgpt' || state.activePlatform === 'doubao' || state.activePlatform === 'deepseek') && enabledPlatforms.includes(state.activePlatform) && (
           <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0' }}>
             {state.syncProgress.running ? (
               <div>
@@ -369,6 +369,8 @@ function App() {
                       ? '请先登录 ChatGPT'
                       : state.syncProgress.error === 'no_params'
                       ? '请刷新豆包页面后重试'
+                      : state.syncProgress.error === 'no_deepseek_token'
+                      ? '请刷新 DeepSeek 页面后重试'
                       : state.syncProgress.error === 'unsupported'
                       ? '该平台暂不支持'
                       : '同步失败（详见日志）'}

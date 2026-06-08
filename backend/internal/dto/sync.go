@@ -10,7 +10,7 @@ type MessageCreate struct {
 }
 
 type ConversationSync struct {
-	Platform       string          `json:"platform" binding:"required,oneof=chatgpt gemini tongyi doubao"`
+	Platform       string          `json:"platform" binding:"required,oneof=chatgpt gemini tongyi doubao deepseek"`
 	ConversationID string          `json:"conversation_id" binding:"required,max=256"`
 	Title          string          `json:"title"`
 	Messages       []MessageCreate `json:"messages" binding:"required,min=1"`

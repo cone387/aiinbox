@@ -4,6 +4,7 @@ import { ChatGPTAdapter } from './chatgpt'
 import { GeminiAdapter } from './gemini'
 import { TongyiAdapter } from './tongyi'
 import { DoubaoAdapter } from './doubao'
+import { DeepSeekAdapter } from './deepseek'
 
 export { PlatformAdapter } from './base'
 export type { CapturedResponse, ParseResult, CaptureMode } from './base'
@@ -13,6 +14,7 @@ const adapters: PlatformAdapter[] = [
   new GeminiAdapter(),
   new TongyiAdapter(),
   new DoubaoAdapter(),
+  new DeepSeekAdapter(),
 ]
 
 export function getAdapter(url: string): PlatformAdapter | null {

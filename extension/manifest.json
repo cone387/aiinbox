@@ -18,6 +18,7 @@
     "https://qianwen.aliyun.com/*",
     "https://www.doubao.com/*",
     "https://doubao.com/*",
+    "https://chat.deepseek.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
     "https://*/*"
@@ -35,7 +36,8 @@
         "https://tongyi.aliyun.com/*",
         "https://qianwen.aliyun.com/*",
         "https://www.doubao.com/*",
-        "https://doubao.com/*"
+        "https://doubao.com/*",
+        "https://chat.deepseek.com/*"
       ],
       "js": ["src/content/intercept.ts"],
       "run_at": "document_start"
@@ -51,7 +53,8 @@
         "https://tongyi.aliyun.com/*",
         "https://qianwen.aliyun.com/*",
         "https://www.doubao.com/*",
-        "https://doubao.com/*"
+        "https://doubao.com/*",
+        "https://chat.deepseek.com/*"
       ]
     }
   ],

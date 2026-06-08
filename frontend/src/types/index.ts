@@ -1,4 +1,4 @@
-export type Platform = 'chatgpt' | 'gemini' | 'tongyi' | 'doubao'
+export type Platform = 'chatgpt' | 'gemini' | 'tongyi' | 'doubao' | 'deepseek'
 
 export interface Conversation {
   id: number

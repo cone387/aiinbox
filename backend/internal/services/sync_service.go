@@ -203,7 +203,7 @@ func (s *SyncService) GetSyncStatus(userID uint) ([]dto.PlatformSyncStatus, erro
 	var statuses []models.SyncStatus
 	s.DB.Where("user_id = ?", userID).Find(&statuses)
 
-	platforms := []string{"chatgpt", "gemini", "tongyi", "doubao"}
+	platforms := []string{"chatgpt", "gemini", "tongyi", "doubao", "deepseek"}
 	statusMap := make(map[string]*models.SyncStatus)
 	for i := range statuses {
 		statusMap[statuses[i].Platform] = &statuses[i]

@@ -5,6 +5,7 @@ export const platformLabels: Record<Platform, string> = {
   gemini: 'Gemini',
   tongyi: '通义千问',
   doubao: '豆包',
+  deepseek: 'DeepSeek',
 }
 
 export const platformUrls: Record<Platform, string> = {
@@ -12,6 +13,7 @@ export const platformUrls: Record<Platform, string> = {
   gemini: 'https://gemini.google.com',
   tongyi: 'https://tongyi.aliyun.com',
   doubao: 'https://doubao.com',
+  deepseek: 'https://chat.deepseek.com',
 }
 
 // Icons mirror the web frontend (frontend/src/components/Layout.tsx) so the
@@ -59,12 +61,23 @@ function DoubaoIcon({ size = 18 }: { size?: number }) {
   )
 }
 
+function DeepSeekIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 1024 1024" fill="none" style={{ flexShrink: 0 }}>
+      <circle cx="512" cy="512" r="512" fill="#4D6BFE" />
+      <path d="M690.5 363.5c-39.5-51.5-96.5-87.5-160-101.5-12.5-2.5-25 5.5-27.5 18s5.5 25 18 27.5c107 23.5 184 116.5 184 226 0 9.5-0.5 19-1.5 28.5l-0.5 4.5c-2.5 21.5-10 61-34 101-13.5 22.5-33 46-62.5 63.5-30 18-63 23-94 23-36.5 0-71-10.5-100.5-29.5-29-18.5-52-45.5-65.5-78.5-2.5-6-8.5-9.5-15-9.5h-71.5c-11 0-19 10.5-15.5 21 17.5 51 50.5 95.5 93 127.5 43.5 32.5 97 50 152.5 50 50 0 99.5-17 137-47 38-30 63.5-65.5 80.5-98.5 16.5-32 25-62 29.5-82.5 2.5-11.5 4-22.5 5-31.5 1-9 1.5-19 1.5-28.5C743.5 477.5 727 415 690.5 363.5z" fill="white"/>
+      <path d="M475.5 332.5c0-13-10.5-23.5-23.5-23.5-53.5 0-104 22-141.5 60-37.5 38-58 89.5-58 143.5 0 38 12 78 37 112.5 24.5 34 58.5 59.5 97.5 73.5 12 4.5 25.5-2 29.5-14 4.5-12-2-25.5-14-29.5-60-22-103.5-78.5-103.5-142.5 0-83 67-150.5 152.5-150.5h0.5C465 362 475.5 351.5 475.5 332.5z" fill="white"/>
+    </svg>
+  )
+}
+
 export function PlatformIcon({ platform, size = 18 }: { platform: Platform; size?: number }) {
   switch (platform) {
     case 'chatgpt': return <ChatGPTIcon size={size} />
     case 'gemini': return <GeminiIcon size={size} />
     case 'tongyi': return <TongyiIcon size={size} />
     case 'doubao': return <DoubaoIcon size={size} />
+    case 'deepseek': return <DeepSeekIcon size={size} />
   }
 }
 

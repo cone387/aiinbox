@@ -26,6 +26,14 @@
     { pattern: '/chat/completion', method: 'POST', exclude: [], mode: 'turn' },
     // POST /im/chain/single: load an existing conversation's messages (history)
     { pattern: '/im/chain/single', method: 'POST', exclude: [], mode: 'history' },
+
+    // ===== DeepSeek (adapted) =====
+    // POST /api/v0/chat/completion: new turn / streaming reply (SSE)
+    { pattern: '/api/v0/chat/completion', method: 'POST', exclude: ['/create_pow_challenge'], mode: 'turn' },
+    // GET /api/v0/chat/history_messages: load single conversation messages (history)
+    { pattern: '/api/v0/chat/history_messages', method: 'GET', exclude: [], mode: 'history' },
+    // GET /api/v0/chat_session/fetch_page: list conversations (history)
+    { pattern: '/api/v0/chat_session/fetch_page', method: 'GET', exclude: [], mode: 'history' },
   ]
 
   function shouldIntercept(url, method) {
@@ -49,6 +57,7 @@
     if (host.includes('gemini.google.com')) return 'gemini'
     if (host.includes('tongyi.aliyun.com') || host.includes('qianwen')) return 'tongyi'
     if (host.includes('doubao.com')) return 'doubao'
+    if (host.includes('chat.deepseek.com')) return 'deepseek'
     return 'unknown'
   }
 
@@ -331,6 +340,7 @@
 
     if (platform === 'chatgpt') { runChatGPTSync(); return }
     if (platform === 'doubao') { runDoubaoSync(); return }
+    if (platform === 'deepseek') { runDeepSeekSync(); return }
     postProgress({ phase: 'error', error: 'unsupported' })
     syncRunning = false
   }
@@ -625,6 +635,141 @@
           }
           var item = byId[ids[i]] || { id: ids[i], name: '' }
           doubaoFetchConversation(item).then(function (res) {
+            if (!res || !res.ok) syncFailed++
+            i++
+            postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })
+            sleep(syncThrottle).then(next)
+          })
+        }
+        next()
+      })
+    }).catch(function (err) {
+      syncLog('同步出错: ' + String(err), 'ERROR')
+      postProgress({ phase: 'error', error: String(err) })
+      syncRunning = false
+    })
+  }
+
+  // ===== DeepSeek full sync =====
+  // Auth: Bearer token from localStorage.userToken (JSON string with .value field)
+  // List: GET /api/v0/chat_session/fetch_page?lte_cursor.pinned=false
+  // Fetch: GET /api/v0/chat/history_messages?chat_session_id=<id>
+
+  function getDeepSeekToken() {
+    try {
+      var raw = localStorage.getItem('userToken')
+      if (!raw) return ''
+      var parsed = JSON.parse(raw)
+      return parsed.value || ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  function deepseekHeaders(token) {
+    return {
+      'Authorization': 'Bearer ' + token,
+      'Accept': 'application/json, text/plain, */*',
+    }
+  }
+
+  // List all conversations (first page returns up to 100 items).
+  function deepseekListAll(token) {
+    return originalFetch('/api/v0/chat_session/fetch_page?lte_cursor.pinned=false', {
+      headers: deepseekHeaders(token), credentials: 'include',
+    }).then(function (r) {
+      if (!r.ok) {
+        syncLog('列举对话失败 HTTP ' + r.status, 'ERROR')
+        return []
+      }
+      return r.json().then(function (j) {
+        var sessions = (j.data && j.data.biz_data && j.data.biz_data.chat_sessions) || []
+        var items = []
+        for (var i = 0; i < sessions.length; i++) {
+          var s = sessions[i]
+          items.push({
+            id: s.id,
+            name: s.title || '',
+            updateTime: s.updated_at,
+          })
+        }
+        postProgress({ phase: 'listing', done: items.length, total: 0, failed: 0 })
+        return items
+      })
+    })
+  }
+
+  // Fetch all messages of a single conversation.
+  function deepseekFetchConversation(item, token) {
+    var convId = item.id
+    return originalFetch('/api/v0/chat/history_messages?chat_session_id=' + convId, {
+      headers: deepseekHeaders(token), credentials: 'include',
+    }).then(function (r) {
+      if (r.status === 429) {
+        syncThrottle = Math.min(Math.round(syncThrottle * 1.5), 8000)
+        syncLog('对话 ' + convId + ' 429 限流', 'WARN')
+        return { ok: false }
+      }
+      if (!r.ok) {
+        syncLog('对话 ' + convId + ' 拉取失败 HTTP ' + r.status, 'ERROR')
+        return { ok: false }
+      }
+      return r.text().then(function (t) {
+        sendToExtension({
+          requestId: 'sync_' + Date.now() + '_' + convId,
+          platform: 'deepseek',
+          url: '/api/v0/chat/history_messages?chat_session_id=' + convId,
+          body: t,
+          requestBody: '',
+          isComplete: true,
+          captureMode: 'history',
+          pageTitle: item.name || '',
+        })
+        return { ok: true }
+      })
+    }).catch(function (err) {
+      syncLog('对话 ' + convId + ' 网络错误: ' + String(err), 'ERROR')
+      return { ok: false }
+    })
+  }
+
+  function runDeepSeekSync() {
+    syncLog('开始同步 DeepSeek 全部历史')
+    postProgress({ phase: 'listing', done: 0, total: 0, failed: 0 })
+
+    var token = getDeepSeekToken()
+    if (!token) {
+      syncLog('未取得 DeepSeek token，请确认已登录', 'ERROR')
+      postProgress({ phase: 'error', error: 'no_deepseek_token' })
+      syncRunning = false
+      return
+    }
+
+    deepseekListAll(token).then(function (items) {
+      syncLog('共列举到 ' + items.length + ' 条对话，请求增量计划…')
+      return requestPlan('deepseek', items).then(function (toFetch) {
+        var ids = toFetch || []
+        syncLog('需要拉取 ' + ids.length + ' 条（其余已是最新）')
+        postProgress({ phase: 'fetching', done: 0, total: ids.length, failed: 0 })
+        if (ids.length === 0) {
+          postProgress({ phase: 'done', done: 0, total: 0, failed: 0 })
+          syncRunning = false
+          return
+        }
+
+        var byId = {}
+        for (var k = 0; k < items.length; k++) byId[items[k].id] = items[k]
+
+        var i = 0
+        function next() {
+          if (i >= ids.length) {
+            syncLog('同步完成：成功 ' + (ids.length - syncFailed) + ' / ' + ids.length + '，失败 ' + syncFailed, syncFailed ? 'WARN' : 'INFO')
+            postProgress({ phase: 'done', done: ids.length, total: ids.length, failed: syncFailed })
+            syncRunning = false
+            return
+          }
+          var item = byId[ids[i]] || { id: ids[i], name: '' }
+          deepseekFetchConversation(item, token).then(function (res) {
             if (!res || !res.ok) syncFailed++
             i++
             postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })

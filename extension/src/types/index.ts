@@ -1,7 +1,7 @@
 // Use string literal union instead of enum to avoid bundling issues
-export type Platform = 'chatgpt' | 'gemini' | 'tongyi' | 'doubao'
+export type Platform = 'chatgpt' | 'gemini' | 'tongyi' | 'doubao' | 'deepseek'
 
-export const PLATFORMS: Platform[] = ['chatgpt', 'gemini', 'tongyi', 'doubao']
+export const PLATFORMS: Platform[] = ['chatgpt', 'gemini', 'tongyi', 'doubao', 'deepseek']
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'unknown'
 
@@ -56,7 +56,7 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     { url: OFFICIAL_SERVICE_URL, token: '', name: '官方服务', isDefault: true },
   ],
   activeServerIndex: 0,
-  enabledPlatforms: ['chatgpt', 'gemini', 'tongyi', 'doubao'],
+  enabledPlatforms: ['chatgpt', 'gemini', 'tongyi', 'doubao', 'deepseek'],
   isCollecting: true,
   offlineMode: false,
 }
