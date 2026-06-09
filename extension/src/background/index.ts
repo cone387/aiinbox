@@ -754,8 +754,32 @@ function getUserFriendlyError(error: string): string {
   return error
 }
 
-// Sync all pending/failed conversations
+// Wait for network to come back online
+async function waitForNetwork(): Promise<boolean> {
+  if (navigator.onLine) return true
+  console.log('[AI Inbox] Network offline, waiting...')
+  return new Promise<boolean>((resolve) => {
+    const checkNetwork = () => {
+      if (navigator.onLine || syncCancelled) {
+        window.removeEventListener('online', checkNetwork)
+        resolve(!syncCancelled)
+      }
+    }
+    window.addEventListener('online', checkNetwork)
+    const interval = setInterval(() => {
+      if (navigator.onLine || syncCancelled) {
+        clearInterval(interval)
+        window.removeEventListener('online', checkNetwork)
+        resolve(!syncCancelled)
+      }
+    }, 5000)
+  })
+}
+
+// Sync all pending/failed conversations (concurrent: up to 3 at a time)
 let syncCancelled = false
+const SYNC_CONCURRENCY = 3
+const SYNC_BATCH_DELAY = 500  // delay between batches in ms
 
 async function syncPendingConversations(): Promise<void> {
   syncCancelled = false
@@ -798,9 +822,10 @@ async function syncPendingConversations(): Promise<void> {
     return
   }
 
-  console.log(`[AI Inbox] Syncing ${pending.length} pending conversations`)
+  console.log(`[AI Inbox] Syncing ${pending.length} pending conversations (concurrency: ${SYNC_CONCURRENCY})`)
   let successCount = 0
   let failCount = 0
+  let processedCount = 0
   const errors: string[] = []
   
   // Broadcast sync start
@@ -812,95 +837,67 @@ async function syncPendingConversations(): Promise<void> {
     failed: 0,
   }).catch(() => {})
   
-  for (let i = 0; i < pending.length; i++) {
+  // Process in batches of SYNC_CONCURRENCY
+  for (let batchStart = 0; batchStart < pending.length; batchStart += SYNC_CONCURRENCY) {
     // Check if sync was cancelled
     if (syncCancelled) {
       console.log('[AI Inbox] Sync cancelled by user')
-      chrome.runtime.sendMessage({
-        type: 'SYNC_COMPLETE',
-        success: successCount,
-        failed: failCount,
-        errors: ['用户取消同步'],
-      }).catch(() => {})
-      return
+      break
     }
     
     // Check network status
     if (!navigator.onLine) {
-      console.log('[AI Inbox] Network offline, pausing sync...')
-      // Wait for network to come back
-      await new Promise<void>((resolve) => {
-        const checkNetwork = () => {
-          if (navigator.onLine || syncCancelled) {
-            window.removeEventListener('online', checkNetwork)
-            resolve()
-          }
-        }
-        window.addEventListener('online', checkNetwork)
-        // Also check every 5 seconds
-        const interval = setInterval(() => {
-          if (navigator.onLine || syncCancelled) {
-            clearInterval(interval)
-            window.removeEventListener('online', checkNetwork)
-            resolve()
-          }
-        }, 5000)
-      })
-      
-      if (syncCancelled) {
+      const ok = await waitForNetwork()
+      if (!ok || syncCancelled) {
         console.log('[AI Inbox] Sync cancelled while waiting for network')
-        chrome.runtime.sendMessage({
-          type: 'SYNC_COMPLETE',
-          success: successCount,
-          failed: failCount,
-          errors: ['用户取消同步'],
-        }).catch(() => {})
-        return
+        break
       }
-      
       console.log('[AI Inbox] Network online, resuming sync...')
     }
     
-    const conv = pending[i]
-    try {
-      await uploadConversation(conv)
-      successCount++
-      
-      // Broadcast progress with success/fail counts
-      chrome.runtime.sendMessage({
-        type: 'SYNC_PROGRESS',
-        current: i + 1,
-        total: pending.length,
-        success: successCount,
-        failed: failCount,
-      }).catch(() => {})
-      
-      // Add delay between uploads to avoid rate limiting (1s per request)
-      if (i < pending.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-    } catch (err) {
-      failCount++
-      const errorMsg = String(err)
-      const friendlyError = getUserFriendlyError(errorMsg)
-      errors.push(friendlyError)
-      console.error(`[AI Inbox] Failed to sync conversation:`, err)
-      
-      // Broadcast progress with success/fail counts
-      chrome.runtime.sendMessage({
-        type: 'SYNC_PROGRESS',
-        current: i + 1,
-        total: pending.length,
-        success: successCount,
-        failed: failCount,
-      }).catch(() => {})
-      
-      // If rate limited (429), wait longer before continuing
-      if (errorMsg.includes('429')) {
-        console.log('[AI Inbox] Rate limited, waiting 10s before continuing...')
-        await new Promise(resolve => setTimeout(resolve, 10000))
+    // Get current batch
+    const batch = pending.slice(batchStart, batchStart + SYNC_CONCURRENCY)
+    
+    // Upload all conversations in this batch concurrently
+    const results = await Promise.allSettled(
+      batch.map(conv => uploadConversation(conv))
+    )
+    
+    // Process results
+    for (const result of results) {
+      processedCount++
+      if (result.status === 'fulfilled') {
+        successCount++
+      } else {
+        failCount++
+        const friendlyError = getUserFriendlyError(String(result.reason))
+        errors.push(friendlyError)
+        
+        // If rate limited, add extra delay before next batch
+        if (String(result.reason).includes('429')) {
+          console.log('[AI Inbox] Rate limited, waiting 10s before next batch...')
+          await new Promise(resolve => setTimeout(resolve, 10000))
+        }
       }
     }
+    
+    // Broadcast progress
+    chrome.runtime.sendMessage({
+      type: 'SYNC_PROGRESS',
+      current: processedCount,
+      total: pending.length,
+      success: successCount,
+      failed: failCount,
+    }).catch(() => {})
+    
+    // Small delay between batches
+    if (batchStart + SYNC_CONCURRENCY < pending.length && !syncCancelled) {
+      await new Promise(resolve => setTimeout(resolve, SYNC_BATCH_DELAY))
+    }
+  }
+  
+  if (syncCancelled) {
+    errors.push('用户取消同步')
   }
   
   lastSyncTime = new Date().toISOString()

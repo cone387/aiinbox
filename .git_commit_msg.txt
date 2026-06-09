@@ -1,1 +1,1 @@
-\"feat: improve UX - friendly errors, network detection, cancel sync, user guide, dynamic timeout\"  
+\"feat: concurrent sync - 3x faster with batch upload\"  
