@@ -9,11 +9,11 @@
     // GET: load existing conversation (history)
     { pattern: '/backend-api/conversation/', method: 'GET', exclude: ['/conversations', '/stream_status', '/textdocs', '/init'], mode: 'history' },
 
-    // ===== Gemini (pending adaptation — need Playwright capture) =====
-    // TODO: verify turn POST pattern and add history GET pattern
-    { pattern: '/_/BardChatUi/data/', method: 'POST', exclude: [], mode: 'turn' },
-    { pattern: '/app/_/data/', method: 'POST', exclude: [], mode: 'turn' },
-    // TODO: history GET rule — need real API path
+    // ===== Gemini (adapted via Playwright capture) =====
+    // POST /_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate: new turn
+    { pattern: '/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate', method: 'POST', exclude: [], mode: 'turn' },
+    // POST /_/BardChatUi/data/batchexecute?rpcids=hNvQHb: load conversation history
+    { pattern: '/_/BardChatUi/data/batchexecute', method: 'POST', exclude: [], mode: 'history' },
 
     // ===== Tongyi / Qianwen (adapted via Playwright capture) =====
     // POST /api/v2/chat: new turn / streaming reply (SSE)
@@ -357,6 +357,7 @@
     syncFailed = 0
 
     if (platform === 'chatgpt') { runChatGPTSync(); return }
+    if (platform === 'gemini') { runGeminiSync(); return }
     if (platform === 'doubao') { runDoubaoSync(); return }
     if (platform === 'deepseek') { runDeepSeekSync(); return }
     if (platform === 'tongyi') { runTongyiSync(); return }
@@ -939,6 +940,156 @@
     }
 
     return fetchPage(null)
+  }
+
+  // ===== Gemini full sync =====
+  function geminiListConversations() {
+    // Gemini renders conversation list in the sidebar as <a> links with href="/app/<convId>"
+    // Extract from DOM
+    var items = []
+    var links = document.querySelectorAll('a[href^="/app/"]')
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i]
+      var href = a.getAttribute('href') || ''
+      var match = href.match(/\/app\/([a-f0-9]+)/)
+      if (match) {
+        var id = match[1]
+        var title = (a.textContent || '').trim()
+        // Skip duplicates
+        if (!items.find(function (it) { return it.id === id })) {
+          items.push({ id: id, name: title || 'Untitled', updateTime: '' })
+        }
+      }
+    }
+    return items
+  }
+
+  function geminiFetchConversation(item, retryCount) {
+    var convId = item.id
+    retryCount = retryCount || 0
+
+    // Find the at token (anti-CSRF) from page scripts
+    var atToken = ''
+    var scripts = document.querySelectorAll('script')
+    for (var i = 0; i < scripts.length; i++) {
+      var text = scripts[i].textContent || ''
+      var m = text.match(/"SNlM0e":"([^"]+)"/)
+      if (m) { atToken = m[1]; break }
+    }
+
+    if (!atToken) {
+      syncLog('未找到 Gemini at token', 'ERROR')
+      return Promise.resolve({ ok: false })
+    }
+
+    // Build the hNvQHb request
+    var innerPayload = JSON.stringify(['c_' + convId, 10, null, 1, [0], [4], null, 1])
+    var fReq = JSON.stringify([[['hNvQHb', innerPayload, null, 'generic']]])
+    var params = 'f.req=' + encodeURIComponent(fReq) + '&at=' + encodeURIComponent(atToken)
+
+    var url = '/_/BardChatUi/data/batchexecute?rpcids=hNvQHb'
+      + '&source-path=%2Fapp%2F' + convId
+      + '&bl=boq_assistant-bard-web-server_20260607.10_p0'
+      + '&hl=zh-CN&_reqid=' + Math.floor(Math.random() * 1000000) + '&rt=c'
+
+    return originalFetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8', 'x-same-domain': '1' },
+      body: params,
+      credentials: 'include',
+    }).then(function (r) {
+      if (r.status === 429) {
+        syncThrottle = Math.min(Math.round(syncThrottle * 1.5), 8000)
+        if (retryCount < 4) {
+          var wait = Math.min(2000 * Math.pow(2, retryCount), 30000)
+          syncLog('429 限流，' + Math.round(wait / 1000) + 's 后重试', 'WARN')
+          return sleep(wait).then(function () {
+            return geminiFetchConversation(item, retryCount + 1)
+          })
+        }
+        syncLog('对话 ' + convId + ' 多次 429 后放弃', 'ERROR')
+        return { ok: false }
+      }
+      if (!r.ok) {
+        syncLog('对话 ' + convId + ' 拉取失败 HTTP ' + r.status, 'ERROR')
+        return { ok: false }
+      }
+      return r.text().then(function (t) {
+        sendToExtension({
+          requestId: 'sync_' + Date.now() + '_' + convId,
+          platform: 'gemini',
+          url: '/_/BardChatUi/data/batchexecute',
+          body: t,
+          requestBody: '',
+          isComplete: true,
+          captureMode: 'history',
+          pageTitle: item.name || '',
+        })
+        return { ok: true }
+      })
+    }).catch(function (err) {
+      syncLog('对话 ' + convId + ' 网络错误: ' + String(err), 'ERROR')
+      return { ok: false }
+    })
+  }
+
+  function runGeminiSync() {
+    syncLog('开始同步 Gemini 全部历史')
+    postProgress({ phase: 'listing', done: 0, total: 0, failed: 0 })
+
+    var items = geminiListConversations()
+    if (items.length === 0) {
+      syncLog('未找到对话列表，请确保侧边栏已展开', 'WARN')
+      postProgress({ phase: 'error', error: 'no_conversations' })
+      syncRunning = false
+      return
+    }
+
+    syncLog('共找到 ' + items.length + ' 条对话，请求增量计划…')
+    postProgress({ phase: 'listing', done: items.length, total: 0, failed: 0 })
+
+    requestPlan('gemini', items).then(function (toFetch) {
+      var ids = toFetch || []
+      syncLog('需要拉取 ' + ids.length + ' 条（其余已是最新）')
+      postProgress({ phase: 'fetching', done: 0, total: ids.length, failed: 0 })
+
+      if (ids.length === 0) {
+        postProgress({ phase: 'done', done: 0, total: 0, failed: 0 })
+        syncRunning = false
+        return
+      }
+
+      var i = 0
+      function next() {
+        if (i >= ids.length) {
+          syncLog('同步完成：成功 ' + (ids.length - syncFailed) + ' / ' + ids.length + '，失败 ' + syncFailed, syncFailed ? 'WARN' : 'INFO')
+          postProgress({ phase: 'done', done: ids.length, total: ids.length, failed: syncFailed })
+          syncRunning = false
+          return
+        }
+        var id = ids[i]
+        var item = items.find(function (it) { return it.id === id })
+        if (!item) {
+          syncLog('未找到对话 ' + id, 'WARN')
+          i++
+          syncFailed++
+          postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })
+          sleep(syncThrottle).then(next)
+          return
+        }
+        geminiFetchConversation(item, 0).then(function (res) {
+          if (!res || !res.ok) syncFailed++
+          i++
+          postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })
+          sleep(syncThrottle).then(next)
+        })
+      }
+      next()
+    }).catch(function (err) {
+      syncLog('同步出错: ' + String(err), 'ERROR')
+      postProgress({ phase: 'error', error: String(err) })
+      syncRunning = false
+    })
   }
 
   function runTongyiSync() {
