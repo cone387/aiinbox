@@ -1,1 +1,1 @@
-feat(extension): add immediate sync after config save and sync status UI  
+fix: move sync status card below server list  
