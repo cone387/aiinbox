@@ -678,7 +678,7 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
   const server = config.servers?.[config.activeServerIndex]
   if (!server?.url || !server?.token) {
     await markFailed(conv.id, 'no_server_configured')
-    return
+    throw new Error('no_server_configured')
   }
 
   const payload = {
@@ -711,12 +711,16 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
       console.log(`[AI Inbox] Uploaded ${conv.platform}/${conv.conversationId}`)
     } else {
       const text = await resp.text().catch(() => '')
-      await markFailed(conv.id, `${resp.status} - ${text.slice(0, 100)}`)
+      const errorMsg = `${resp.status} - ${text.slice(0, 100)}`
+      await markFailed(conv.id, errorMsg)
       console.warn(`[AI Inbox] Upload failed ${resp.status}: ${text.slice(0, 100)}`)
+      throw new Error(errorMsg)
     }
   } catch (err) {
-    await markFailed(conv.id, String(err))
+    const errorMsg = String(err)
+    await markFailed(conv.id, errorMsg)
     console.warn(`[AI Inbox] Upload error:`, err)
+    throw err
   }
 }
 

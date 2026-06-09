@@ -1,1 +1,1 @@
-feat: show real-time success/fail count during sync  
+fix: throw error on upload failure to update progress correctly  
