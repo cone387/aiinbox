@@ -109,6 +109,7 @@ export class GeminiAdapter extends PlatformAdapter {
     const conversation: UnifiedConversation = {
       id: convId || this.generateId(),
       platform: this.platform,
+      conversationId: convId || this.generateId(),
       title,
       messages,
       createdAt: this.nowISO(),
@@ -214,6 +215,7 @@ export class GeminiAdapter extends PlatformAdapter {
     const conversation: UnifiedConversation = {
       id: convId || this.generateId(),
       platform: this.platform,
+      conversationId: convId || this.generateId(),
       title,
       messages,
       createdAt: firstTimestamp || this.nowISO(),
