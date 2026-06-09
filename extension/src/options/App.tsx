@@ -22,6 +22,7 @@ function App() {
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
   const [exporting, setExporting] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null)
 
   useEffect(() => {
     loadConfig().then((cfg) => {
@@ -76,20 +77,52 @@ function App() {
   }
 
   async function handleRetryFailed() {
+    setSyncing(true)
+    setSyncProgress({ current: 0, total: cacheTotal.failed })
+    
+    const listener = (message: any) => {
+      if (message.type === 'SYNC_PROGRESS') {
+        setSyncProgress({ current: message.current, total: message.total })
+      }
+    }
+    chrome.runtime.onMessage.addListener(listener)
+    
     await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
-    setMessage('已触发重新同步')
-    setTimeout(() => setMessage(''), 3000)
-    setTimeout(loadCacheStats, 1500)
+    
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(listener)
+      setSyncProgress(null)
+      setMessage('已触发重新同步')
+      setTimeout(() => setMessage(''), 3000)
+      setTimeout(loadCacheStats, 1500)
+    }, 1000)
+    setSyncing(false)
   }
 
   async function handleSyncNow() {
     setSyncing(true)
+    setSyncProgress({ current: 0, total: cacheTotal.pending })
     try {
+      // Listen for sync progress updates
+      const listener = (message: any) => {
+        if (message.type === 'SYNC_PROGRESS') {
+          setSyncProgress({ current: message.current, total: message.total })
+        }
+      }
+      chrome.runtime.onMessage.addListener(listener)
+      
       await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
-      setMessage('同步已完成')
-      setTimeout(() => setMessage(''), 3000)
-      setTimeout(loadCacheStats, 1000)
+      
+      // Remove listener after sync completes
+      setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(listener)
+        setSyncProgress(null)
+        setMessage('同步已完成')
+        setTimeout(() => setMessage(''), 3000)
+        setTimeout(loadCacheStats, 1000)
+      }, 1000)
     } catch (err) {
+      setSyncProgress(null)
       setMessage('同步失败: ' + err)
     }
     setSyncing(false)
@@ -354,6 +387,27 @@ function App() {
                 </span>
               )}
             </div>
+            
+            {/* Sync Progress Bar */}
+            {syncProgress && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
+                  <span>同步进度</span>
+                  <span>{syncProgress.current}/{syncProgress.total} ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', backgroundColor: '#e5e7eb', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${(syncProgress.current / syncProgress.total) * 100}%`,
+                      height: '100%',
+                      backgroundColor: '#2563eb',
+                      transition: 'width 0.3s ease',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 onClick={handleSyncNow}
@@ -370,7 +424,12 @@ function App() {
               {cacheTotal.failed > 0 && (
                 <button
                   onClick={handleRetryFailed}
-                  style={{ padding: '6px 14px', fontSize: '13px', border: '1px solid #fde68a', borderRadius: '6px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}
+                  disabled={syncing}
+                  style={{
+                    padding: '6px 14px', fontSize: '13px', border: '1px solid #fde68a', borderRadius: '6px',
+                    cursor: syncing ? 'not-allowed' : 'pointer',
+                    backgroundColor: syncing ? '#f3f4f6' : '#fffbeb', color: syncing ? '#9ca3af' : '#d97706'
+                  }}
                 >
                   重试失败 ({cacheTotal.failed})
                 </button>
@@ -378,14 +437,24 @@ function App() {
               {cacheTotal.synced > 0 && (
                 <button
                   onClick={handleClearSynced}
-                  style={{ padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#6b7280' }}
+                  disabled={syncing}
+                  style={{
+                    padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px',
+                    cursor: syncing ? 'not-allowed' : 'pointer',
+                    backgroundColor: syncing ? '#f3f4f6' : 'white', color: syncing ? '#9ca3af' : '#6b7280'
+                  }}
                 >
                   清除已同步
                 </button>
               )}
               <button
                 onClick={loadCacheStats}
-                style={{ padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}
+                disabled={syncing}
+                style={{
+                  padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px',
+                  cursor: syncing ? 'not-allowed' : 'pointer',
+                  backgroundColor: syncing ? '#f3f4f6' : 'white', color: syncing ? '#9ca3af' : '#374151'
+                }}
               >
                 刷新
               </button>

@@ -1,1 +1,1 @@
-fix: add rate limit handling and increase API limit  
+feat: add sync progress bar  

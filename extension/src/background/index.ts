@@ -725,11 +725,26 @@ async function syncPendingConversations(): Promise<void> {
   let successCount = 0
   let failCount = 0
   
+  // Broadcast sync start
+  chrome.runtime.sendMessage({
+    type: 'SYNC_PROGRESS',
+    current: 0,
+    total: pending.length,
+  })
+  
   for (let i = 0; i < pending.length; i++) {
     const conv = pending[i]
     try {
       await uploadConversation(conv)
       successCount++
+      
+      // Broadcast progress
+      chrome.runtime.sendMessage({
+        type: 'SYNC_PROGRESS',
+        current: i + 1,
+        total: pending.length,
+      })
+      
       // Add delay between uploads to avoid rate limiting (500ms per request)
       if (i < pending.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 500))
