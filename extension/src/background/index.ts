@@ -770,7 +770,9 @@ async function syncPendingConversations(): Promise<void> {
     type: 'SYNC_PROGRESS',
     current: 0,
     total: pending.length,
-  })
+    success: 0,
+    failed: 0,
+  }).catch(() => {}) // Ignore errors from closed pages
   
   for (let i = 0; i < pending.length; i++) {
     const conv = pending[i]
@@ -778,12 +780,14 @@ async function syncPendingConversations(): Promise<void> {
       await uploadConversation(conv)
       successCount++
       
-      // Broadcast progress
+      // Broadcast progress with success/fail counts
       chrome.runtime.sendMessage({
         type: 'SYNC_PROGRESS',
         current: i + 1,
         total: pending.length,
-      })
+        success: successCount,
+        failed: failCount,
+      }).catch(() => {}) // Ignore errors from closed pages
       
       // Add delay between uploads to avoid rate limiting (1s per request)
       if (i < pending.length - 1) {
@@ -794,6 +798,16 @@ async function syncPendingConversations(): Promise<void> {
       const errorMsg = String(err)
       errors.push(errorMsg)
       console.error(`[AI Inbox] Failed to sync conversation:`, err)
+      
+      // Broadcast progress with success/fail counts
+      chrome.runtime.sendMessage({
+        type: 'SYNC_PROGRESS',
+        current: i + 1,
+        total: pending.length,
+        success: successCount,
+        failed: failCount,
+      }).catch(() => {}) // Ignore errors from closed pages
+      
       // If rate limited (429), wait longer before continuing
       if (errorMsg.includes('429')) {
         console.log('[AI Inbox] Rate limited, waiting 10s before continuing...')
@@ -811,7 +825,7 @@ async function syncPendingConversations(): Promise<void> {
     success: successCount,
     failed: failCount,
     errors: errors.slice(0, 10), // Limit to 10 errors
-  })
+  }).catch(() => {}) // Ignore errors from closed pages
 }
 
 // Set up sync alarm

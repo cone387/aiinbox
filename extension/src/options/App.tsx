@@ -22,7 +22,7 @@ function App() {
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
   const [exporting, setExporting] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null)
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; success: number; failed: number } | null>(null)
   const [syncResult, setSyncResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
 
   useEffect(() => {
@@ -79,12 +79,17 @@ function App() {
 
   async function handleRetryFailed() {
     setSyncing(true)
-    setSyncProgress({ current: 0, total: cacheTotal.failed })
+    setSyncProgress({ current: 0, total: cacheTotal.failed, success: 0, failed: 0 })
     setSyncResult(null)
     
     const listener = (message: any) => {
       if (message.type === 'SYNC_PROGRESS') {
-        setSyncProgress({ current: message.current, total: message.total })
+        setSyncProgress({ 
+          current: message.current, 
+          total: message.total,
+          success: message.success || 0,
+          failed: message.failed || 0,
+        })
       }
       if (message.type === 'SYNC_COMPLETE') {
         setSyncResult({
@@ -107,12 +112,17 @@ function App() {
 
   async function handleSyncNow() {
     setSyncing(true)
-    setSyncProgress({ current: 0, total: cacheTotal.pending })
+    setSyncProgress({ current: 0, total: cacheTotal.pending, success: 0, failed: 0 })
     setSyncResult(null)
     
     const listener = (message: any) => {
       if (message.type === 'SYNC_PROGRESS') {
-        setSyncProgress({ current: message.current, total: message.total })
+        setSyncProgress({ 
+          current: message.current, 
+          total: message.total,
+          success: message.success || 0,
+          failed: message.failed || 0,
+        })
       }
       if (message.type === 'SYNC_COMPLETE') {
         setSyncResult({
@@ -402,7 +412,7 @@ function App() {
                       <span>同步进度</span>
                       <span>{syncProgress.current}/{syncProgress.total} ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)</span>
                     </div>
-                    <div style={{ width: '100%', height: '8px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ width: '100%', height: '8px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
                       <div
                         style={{
                           width: `${(syncProgress.current / syncProgress.total) * 100}%`,
@@ -411,6 +421,12 @@ function App() {
                           transition: 'width 0.3s ease',
                         }}
                       />
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#64748b' }}>
+                      <span>成功: <strong style={{ color: '#16a34a' }}>{syncProgress.success}</strong></span>
+                      {syncProgress.failed > 0 && (
+                        <span>失败: <strong style={{ color: '#dc2626' }}>{syncProgress.failed}</strong></span>
+                      )}
                     </div>
                   </div>
                 )}

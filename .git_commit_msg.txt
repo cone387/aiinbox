@@ -1,1 +1,1 @@
-fix: reset failed attempts when retrying failed syncs  
+feat: show real-time success/fail count during sync  
