@@ -526,6 +526,13 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         break
       }
 
+      case 'CANCEL_SYNC': {
+        syncCancelled = true
+        console.log('[AI Inbox] Sync cancellation requested')
+        sendResponse({ ok: true })
+        break
+      }
+
       case 'CLEAR_SYNCED': {
         const deleted = await clearSynced()
         sendResponse({ ok: true, deleted })
@@ -694,7 +701,16 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
     updated_at: conv.updatedAt,
   }
 
+  // Check network status before upload
+  if (!navigator.onLine) {
+    const errorMsg = 'network_offline'
+    await markFailed(conv.id, errorMsg)
+    throw new Error(errorMsg)
+  }
+
   try {
+    // Dynamic timeout based on message count
+    const timeout = Math.max(15000, conv.messages.length * 100)
     const resp = await fetch(`${server.url}/api/v1/conversations/sync`, {
       method: 'POST',
       headers: {
@@ -702,7 +718,7 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
         'Authorization': 'Bearer ' + server.token,
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeout),
     })
 
     if (resp.ok) {
@@ -724,8 +740,26 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
   }
 }
 
+// Convert technical error to user-friendly message
+function getUserFriendlyError(error: string): string {
+  if (error.includes('429')) return '请求太频繁，系统已自动等待后重试'
+  if (error.includes('timeout') || error.includes('TimeoutError')) return '连接超时，请检查网络或稍后重试'
+  if (error.includes('Failed to fetch') || error.includes('NetworkError')) return '无法连接服务器，请检查网络'
+  if (error.includes('network_offline')) return '网络已断开，请检查网络连接'
+  if (error.includes('no_server_configured')) return '未配置服务器，请先在设置中配置'
+  if (error.includes('401') || error.includes('Unauthorized')) return '授权已过期，请重新授权登录'
+  if (error.includes('403') || error.includes('Forbidden')) return '权限不足，请检查授权'
+  if (error.includes('500')) return '服务器内部错误，请稍后重试'
+  if (error.includes('502') || error.includes('503') || error.includes('504')) return '服务器暂时不可用，请稍后重试'
+  return error
+}
+
 // Sync all pending/failed conversations
+let syncCancelled = false
+
 async function syncPendingConversations(): Promise<void> {
+  syncCancelled = false
+  
   if (config.offlineMode) {
     console.log('[AI Inbox] Sync skipped: offline mode')
     return
@@ -738,7 +772,7 @@ async function syncPendingConversations(): Promise<void> {
       success: 0,
       failed: 0,
       errors: ['未配置服务器'],
-    })
+    }).catch(() => {})
     return
   }
   if (!cachedHealth.server || !cachedHealth.auth) {
@@ -748,7 +782,7 @@ async function syncPendingConversations(): Promise<void> {
       success: 0,
       failed: 0,
       errors: ['服务器未连接或授权失败'],
-    })
+    }).catch(() => {})
     return
   }
 
@@ -760,7 +794,7 @@ async function syncPendingConversations(): Promise<void> {
       success: 0,
       failed: 0,
       errors: [],
-    })
+    }).catch(() => {})
     return
   }
 
@@ -776,9 +810,57 @@ async function syncPendingConversations(): Promise<void> {
     total: pending.length,
     success: 0,
     failed: 0,
-  }).catch(() => {}) // Ignore errors from closed pages
+  }).catch(() => {})
   
   for (let i = 0; i < pending.length; i++) {
+    // Check if sync was cancelled
+    if (syncCancelled) {
+      console.log('[AI Inbox] Sync cancelled by user')
+      chrome.runtime.sendMessage({
+        type: 'SYNC_COMPLETE',
+        success: successCount,
+        failed: failCount,
+        errors: ['用户取消同步'],
+      }).catch(() => {})
+      return
+    }
+    
+    // Check network status
+    if (!navigator.onLine) {
+      console.log('[AI Inbox] Network offline, pausing sync...')
+      // Wait for network to come back
+      await new Promise<void>((resolve) => {
+        const checkNetwork = () => {
+          if (navigator.onLine || syncCancelled) {
+            window.removeEventListener('online', checkNetwork)
+            resolve()
+          }
+        }
+        window.addEventListener('online', checkNetwork)
+        // Also check every 5 seconds
+        const interval = setInterval(() => {
+          if (navigator.onLine || syncCancelled) {
+            clearInterval(interval)
+            window.removeEventListener('online', checkNetwork)
+            resolve()
+          }
+        }, 5000)
+      })
+      
+      if (syncCancelled) {
+        console.log('[AI Inbox] Sync cancelled while waiting for network')
+        chrome.runtime.sendMessage({
+          type: 'SYNC_COMPLETE',
+          success: successCount,
+          failed: failCount,
+          errors: ['用户取消同步'],
+        }).catch(() => {})
+        return
+      }
+      
+      console.log('[AI Inbox] Network online, resuming sync...')
+    }
+    
     const conv = pending[i]
     try {
       await uploadConversation(conv)
@@ -791,7 +873,7 @@ async function syncPendingConversations(): Promise<void> {
         total: pending.length,
         success: successCount,
         failed: failCount,
-      }).catch(() => {}) // Ignore errors from closed pages
+      }).catch(() => {})
       
       // Add delay between uploads to avoid rate limiting (1s per request)
       if (i < pending.length - 1) {
@@ -800,7 +882,8 @@ async function syncPendingConversations(): Promise<void> {
     } catch (err) {
       failCount++
       const errorMsg = String(err)
-      errors.push(errorMsg)
+      const friendlyError = getUserFriendlyError(errorMsg)
+      errors.push(friendlyError)
       console.error(`[AI Inbox] Failed to sync conversation:`, err)
       
       // Broadcast progress with success/fail counts
@@ -810,7 +893,7 @@ async function syncPendingConversations(): Promise<void> {
         total: pending.length,
         success: successCount,
         failed: failCount,
-      }).catch(() => {}) // Ignore errors from closed pages
+      }).catch(() => {})
       
       // If rate limited (429), wait longer before continuing
       if (errorMsg.includes('429')) {
@@ -829,7 +912,7 @@ async function syncPendingConversations(): Promise<void> {
     success: successCount,
     failed: failCount,
     errors: errors.slice(0, 10), // Limit to 10 errors
-  }).catch(() => {}) // Ignore errors from closed pages
+  }).catch(() => {})
 }
 
 // Set up sync alarm

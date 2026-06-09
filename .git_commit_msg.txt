@@ -1,1 +1,1 @@
-fix: throw error on upload failure to update progress correctly  
+\"feat: improve UX - friendly errors, network detection, cancel sync, user guide, dynamic timeout\"  

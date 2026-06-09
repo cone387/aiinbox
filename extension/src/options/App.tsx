@@ -24,10 +24,18 @@ function App() {
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; success: number; failed: number } | null>(null)
   const [syncResult, setSyncResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
+  const [showGuide, setShowGuide] = useState(false)
 
   useEffect(() => {
     loadConfig().then((cfg) => {
-      if (cfg) cfg.servers?.forEach((_, i) => checkHealth(i, cfg))
+      if (cfg) {
+        cfg.servers?.forEach((_, i) => checkHealth(i, cfg))
+        // Show guide if no server is configured or not authorized
+        const hasValidServer = cfg.servers?.some(s => s.url && s.token)
+        if (!hasValidServer && !cfg.offlineMode) {
+          setShowGuide(true)
+        }
+      }
     })
     loadCacheStats()
   }, [])
@@ -265,6 +273,47 @@ function App() {
         </div>
       )}
 
+      {/* First-time user guide */}
+      {showGuide && (
+        <div style={{ padding: '16px', marginBottom: '16px', border: '2px solid #3b82f6', borderRadius: '8px', backgroundColor: '#eff6ff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ fontWeight: 600, fontSize: '15px', color: '#1e40af' }}>👋 欢迎使用 AI Inbox</div>
+            <button
+              onClick={() => setShowGuide(false)}
+              style={{ padding: '4px 10px', fontSize: '12px', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#3b82f6' }}
+            >
+              关闭
+            </button>
+          </div>
+          <div style={{ fontSize: '13px', color: '#1e40af', lineHeight: 1.8 }}>
+            <div style={{ marginBottom: '8px' }}><strong>快速开始：</strong></div>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '200px' }}>
+                <div style={{ fontWeight: 500, marginBottom: '4px' }}>🌐 方案一：连接本地服务（推荐）</div>
+                <div style={{ fontSize: '12px', color: '#3b82f6' }}>
+                  1. 下载并启动 AI Inbox 服务端<br />
+                  2. 在下方填写服务地址<br />
+                  3. 点击“授权登录”<br />
+                  4. 自动同步所有对话
+                </div>
+              </div>
+              <div style={{ flex: 1, minWidth: '200px' }}>
+                <div style={{ fontWeight: 500, marginBottom: '4px' }}>💾 方案二：离线模式</div>
+                <div style={{ fontSize: '12px', color: '#3b82f6' }}>
+                  1. 开启下方“离线模式”<br />
+                  2. 自动捕获对话到本地<br />
+                  3. 随时导出数据<br />
+                  4. 无需任何服务端
+                </div>
+              </div>
+            </div>
+            <div style={{ marginTop: '12px', padding: '8px', backgroundColor: '#dbeafe', borderRadius: '4px', fontSize: '12px' }}>
+              💡 <strong>提示：</strong>建议使用方案一，可以享受搜索、统计等完整功能。离线模式仅适合临时使用。
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Offline mode toggle */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '14px 16px', marginBottom: '16px', border: config.offlineMode ? '1.5px solid #3b82f6' : '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: config.offlineMode ? '#f8faff' : 'white' }}>
         <div>
@@ -495,6 +544,25 @@ function App() {
               >
                 {syncing ? '同步中...' : '立即同步'}
               </button>
+              {syncing && (
+                <button
+                  onClick={async () => {
+                    await chrome.runtime.sendMessage({ type: 'CANCEL_SYNC' })
+                    setSyncing(false)
+                    setSyncProgress(null)
+                    setSyncResult(null)
+                    setMessage('已取消同步')
+                    setTimeout(() => setMessage(''), 3000)
+                    setTimeout(loadCacheStats, 1000)
+                  }}
+                  style={{
+                    padding: '6px 14px', fontSize: '13px', border: '1px solid #fecaca', borderRadius: '6px',
+                    cursor: 'pointer', backgroundColor: '#fef2f2', color: '#dc2626',
+                  }}
+                >
+                  取消同步
+                </button>
+              )}
               {cacheTotal.failed > 0 && (
                 <button
                   onClick={handleRetryFailed}
