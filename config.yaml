@@ -30,7 +30,7 @@ rate_limit:
   auth_max_attempts: 10
   auth_block_minutes: 15
   search_per_minute: 30
-  api_per_minute: 120
+  api_per_minute: 300
 
 cors:
   allowed_origins:

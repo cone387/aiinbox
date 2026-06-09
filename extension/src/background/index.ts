@@ -725,13 +725,23 @@ async function syncPendingConversations(): Promise<void> {
   let successCount = 0
   let failCount = 0
   
-  for (const conv of pending) {
+  for (let i = 0; i < pending.length; i++) {
+    const conv = pending[i]
     try {
       await uploadConversation(conv)
       successCount++
+      // Add delay between uploads to avoid rate limiting (500ms per request)
+      if (i < pending.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
     } catch (err) {
       failCount++
       console.error(`[AI Inbox] Failed to sync conversation:`, err)
+      // If rate limited (429), wait longer before continuing
+      if (String(err).includes('429')) {
+        console.log('[AI Inbox] Rate limited, waiting 5s before continuing...')
+        await new Promise(resolve => setTimeout(resolve, 5000))
+      }
     }
   }
   
