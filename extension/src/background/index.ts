@@ -459,6 +459,12 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         if (!config.offlineMode && server?.url && server?.token) {
           startHealthCheck()
           startSyncAlarm()
+          // Immediately sync pending data after configuration (1s delay for health check)
+          setTimeout(() => {
+            syncPendingConversations().then(() => {
+              console.log('[AI Inbox] Initial sync completed after config save')
+            })
+          }, 1000)
         }
         sendResponse({ ok: true })
         break
@@ -716,10 +722,21 @@ async function syncPendingConversations(): Promise<void> {
   if (pending.length === 0) return
 
   console.log(`[AI Inbox] Syncing ${pending.length} pending conversations`)
+  let successCount = 0
+  let failCount = 0
+  
   for (const conv of pending) {
-    await uploadConversation(conv)
+    try {
+      await uploadConversation(conv)
+      successCount++
+    } catch (err) {
+      failCount++
+      console.error(`[AI Inbox] Failed to sync conversation:`, err)
+    }
   }
+  
   lastSyncTime = new Date().toISOString()
+  console.log(`[AI Inbox] Sync completed: ${successCount} success, ${failCount} failed`)
 }
 
 // Set up sync alarm

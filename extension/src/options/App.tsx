@@ -21,6 +21,7 @@ function App() {
   const [exportPlatform, setExportPlatform] = useState<Platform | 'all'>('all')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
   const [exporting, setExporting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     loadConfig().then((cfg) => {
@@ -79,6 +80,19 @@ function App() {
     setMessage('已触发重新同步')
     setTimeout(() => setMessage(''), 3000)
     setTimeout(loadCacheStats, 1500)
+  }
+
+  async function handleSyncNow() {
+    setSyncing(true)
+    try {
+      await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
+      setMessage('同步已完成')
+      setTimeout(() => setMessage(''), 3000)
+      setTimeout(loadCacheStats, 1000)
+    } catch (err) {
+      setMessage('同步失败: ' + err)
+    }
+    setSyncing(false)
   }
 
   async function loadConfig(): Promise<ExtensionConfig | null> {
@@ -217,6 +231,63 @@ function App() {
           <span style={{ position: 'absolute', top: '3px', left: config.offlineMode ? '21px' : '3px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'white', transition: '0.2s' }} />
         </label>
       </div>
+
+      {/* Sync Status Card (only in online mode) */}
+      {!config.offlineMode && cacheTotal.total > 0 && (
+        <div style={{ padding: '14px 16px', marginBottom: '16px', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: 'white' }}>
+          <div style={{ fontWeight: 500, fontSize: '14px', marginBottom: '8px' }}>📊 数据同步状态</div>
+          <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: '#374151', marginBottom: '12px', flexWrap: 'wrap' }}>
+            <span>总计: <strong>{cacheTotal.total}</strong></span>
+            <span style={{ color: cacheTotal.pending > 0 ? '#d97706' : '#16a34a' }}>
+              待同步: <strong>{cacheTotal.pending}</strong>
+            </span>
+            <span style={{ color: '#16a34a' }}>
+              已同步: <strong>{cacheTotal.synced}</strong>
+            </span>
+            {cacheTotal.failed > 0 && (
+              <span style={{ color: '#dc2626' }}>
+                失败: <strong>{cacheTotal.failed}</strong>
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing || cacheTotal.pending === 0}
+              style={{
+                padding: '6px 14px', fontSize: '13px', border: 'none', borderRadius: '6px',
+                cursor: syncing || cacheTotal.pending === 0 ? 'not-allowed' : 'pointer',
+                backgroundColor: cacheTotal.pending === 0 ? '#cbd5e1' : '#2563eb',
+                color: 'white', fontWeight: 500,
+              }}
+            >
+              {syncing ? '同步中...' : '立即同步'}
+            </button>
+            {cacheTotal.failed > 0 && (
+              <button
+                onClick={handleRetryFailed}
+                style={{ padding: '6px 14px', fontSize: '13px', border: '1px solid #fde68a', borderRadius: '6px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}
+              >
+                重试失败 ({cacheTotal.failed})
+              </button>
+            )}
+            {cacheTotal.synced > 0 && (
+              <button
+                onClick={handleClearSynced}
+                style={{ padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#6b7280' }}
+              >
+                清除已同步
+              </button>
+            )}
+            <button
+              onClick={loadCacheStats}
+              style={{ padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}
+            >
+              刷新
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Server list (hidden in offline mode) */}
       {config.offlineMode ? (
@@ -431,22 +502,6 @@ function App() {
           >
             刷新统计
           </button>
-          {!config.offlineMode && cacheTotal.failed > 0 && (
-            <button
-              onClick={handleRetryFailed}
-              style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #fde68a', borderRadius: '6px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}
-            >
-              重试失败 ({cacheTotal.failed})
-            </button>
-          )}
-          {!config.offlineMode && cacheTotal.synced > 0 && (
-            <button
-              onClick={handleClearSynced}
-              style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#6b7280' }}
-            >
-              清除已同步
-            </button>
-          )}
         </div>
       </div>
 
