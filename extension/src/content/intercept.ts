@@ -79,8 +79,11 @@ window.addEventListener('message', (event) => {
       contextValid = false
     }
   } else if (type === 'SYNC_PROGRESS' && payload) {
+    console.log('[AI Inbox Content] SYNC_PROGRESS:', JSON.stringify(payload))
     try {
-      chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', ...payload }).catch(() => {})
+      chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', ...payload }).catch((err) => {
+        console.warn('[AI Inbox Content] SYNC_PROGRESS forward failed:', err)
+      })
     } catch {
       contextValid = false
     }

@@ -15,11 +15,13 @@
     { pattern: '/app/_/data/', method: 'POST', exclude: [], mode: 'turn' },
     // TODO: history GET rule — need real API path
 
-    // ===== Tongyi / Qianwen (pending adaptation — need Playwright capture) =====
-    // TODO: verify turn POST pattern and add history GET pattern
-    { pattern: '/dialog/conversation', method: 'POST', exclude: [], mode: 'turn' },
-    { pattern: '/qianwen/api/chat', method: 'POST', exclude: [], mode: 'turn' },
-    // TODO: history GET rule — need real API path
+    // ===== Tongyi / Qianwen (adapted via Playwright capture) =====
+    // POST /api/v2/chat: new turn / streaming reply (SSE)
+    { pattern: '/api/v2/chat', method: 'POST', exclude: [], mode: 'turn' },
+    // GET /api/v1/session/msg/list: load single conversation messages (history)
+    { pattern: '/api/v1/session/msg/list', method: 'GET', exclude: [], mode: 'history' },
+    // POST /api/v2/session/page/list: list conversations (used by full-sync only, NOT intercepted)
+    // Note: full-sync calls this via originalFetch directly, so no intercept rule needed.
 
     // ===== Doubao (adapted via live capture) =====
     // POST /chat/completion: new turn / streaming reply (SSE)
@@ -55,7 +57,7 @@
     var host = window.location.hostname
     if (host.includes('openai.com') || host.includes('chatgpt.com')) return 'chatgpt'
     if (host.includes('gemini.google.com')) return 'gemini'
-    if (host.includes('tongyi.aliyun.com') || host.includes('qianwen')) return 'tongyi'
+    if (host.includes('tongyi.aliyun.com') || host.includes('qianwen.com') || host.includes('qianwen')) return 'tongyi'
     if (host.includes('doubao.com')) return 'doubao'
     if (host.includes('chat.deepseek.com')) return 'deepseek'
     return 'unknown'
@@ -80,6 +82,19 @@
     } catch (e) {}
   }
 
+  // Tongyi/Qianwen API endpoints carry auth params (biz_id, ut, nonce, timestamp…)
+  // in the query string, added by the page SDK. We stash the query string of any
+  // observed chat2-api request so full-sync can replay list/fetch with valid auth.
+  var tongyiAuthQuery = ''
+  function rememberTongyiQuery(url) {
+    try {
+      if (typeof url === 'string' && url.indexOf('chat2-api.qianwen.com') !== -1) {
+        var qi = url.indexOf('?')
+        if (qi !== -1) tongyiAuthQuery = url.substring(qi)
+      }
+    } catch (e) {}
+  }
+
   var originalFetch = window.fetch
   window.fetch = function () {
     var args = arguments
@@ -89,6 +104,7 @@
     var method = (init && init.method) ? init.method.toUpperCase() : 'GET'
 
     rememberImQuery(url)
+    rememberTongyiQuery(url)
 
     var captureMode = shouldIntercept(url, method)
     if (!captureMode) {
@@ -183,6 +199,7 @@
     this._aiinbox_url = url ? url.toString() : ''
     this._aiinbox_method = method ? method.toUpperCase() : 'GET'
     rememberImQuery(this._aiinbox_url)
+    rememberTongyiQuery(this._aiinbox_url)
     return originalOpen.apply(this, arguments)
   }
 
@@ -228,6 +245,7 @@
   }
 
   function postProgress(fields) {
+    console.log('[AI Inbox][progress]', JSON.stringify(fields))
     window.postMessage({ source: 'aiinbox-page', type: 'SYNC_PROGRESS', payload: fields }, '*')
   }
 
@@ -341,6 +359,7 @@
     if (platform === 'chatgpt') { runChatGPTSync(); return }
     if (platform === 'doubao') { runDoubaoSync(); return }
     if (platform === 'deepseek') { runDeepSeekSync(); return }
+    if (platform === 'tongyi') { runTongyiSync(); return }
     postProgress({ phase: 'error', error: 'unsupported' })
     syncRunning = false
   }
@@ -770,6 +789,193 @@
           }
           var item = byId[ids[i]] || { id: ids[i], name: '' }
           deepseekFetchConversation(item, token).then(function (res) {
+            if (!res || !res.ok) syncFailed++
+            i++
+            postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })
+            sleep(syncThrottle).then(next)
+          })
+        }
+        next()
+      })
+    }).catch(function (err) {
+      syncLog('同步出错: ' + String(err), 'ERROR')
+      postProgress({ phase: 'error', error: String(err) })
+      syncRunning = false
+    })
+  }
+
+  // ===== Tongyi / Qianwen full sync =====
+  // Auth: cookie-based + SDK-injected query params (ut, nonce, timestamp, biz_id…).
+  // We reuse the observed query string from any chat2-api request (fires on page load).
+  // List: POST /api/v2/session/page/list  (paginated via next_token)
+  // Fetch: GET /api/v1/session/msg/list?session_id=... (paginated via page number)
+
+  function tongyiBaseUrl(path) {
+    return 'https://chat2-api.qianwen.com' + path + (tongyiAuthQuery || '')
+  }
+
+  function tongyiListAll() {
+    var items = []
+    var nextToken = ''
+
+    function step(retry) {
+      var body = JSON.stringify({
+        limit: 50,
+        next_token: nextToken,
+        sort_field: 'modifiedTime',
+        need_filter_tag: true,
+      })
+      return originalFetch(tongyiBaseUrl('/api/v2/session/page/list'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body,
+        credentials: 'include',
+      }).then(function (r) {
+        if (r.status === 429) {
+          retry = retry || 0
+          if (retry < 4) {
+            var wait = Math.min(2000 * Math.pow(2, retry), 30000)
+            syncLog('列举对话 429 限流，' + Math.round(wait / 1000) + 's 后重试', 'WARN')
+            return sleep(wait).then(function () { return step(retry + 1) })
+          }
+          syncLog('列举对话多次 429 后中止，已收集 ' + items.length + ' 条', 'ERROR')
+          return items
+        }
+        if (!r.ok) {
+          syncLog('列举对话失败 HTTP ' + r.status, 'ERROR')
+          return items
+        }
+        return r.json().then(function (j) {
+          var d = j && j.data
+          if (!d) {
+            syncLog('列举对话异常 code=' + (j && j.code), 'ERROR')
+            return items
+          }
+          var list = d.list || []
+          for (var i = 0; i < list.length; i++) {
+            var s = list[i]
+            items.push({
+              id: s.session_id,
+              name: s.title || '',
+              updateTime: s.updated_at, // epoch ms
+            })
+          }
+          postProgress({ phase: 'listing', done: items.length, total: 0, failed: 0 })
+          if (d.have_next_page && d.next_token) {
+            nextToken = d.next_token
+            return sleep(syncThrottle).then(function () { return step(0) })
+          }
+          return items
+        })
+      })
+    }
+    return step(0)
+  }
+
+  // Fetch ALL messages of one conversation using cursor-based pagination.
+  // The API ignores the `page` number parameter; it uses `pos` (cursor from
+  // the last item) for pagination.  We collect all pages, merge the `list`
+  // arrays into one body, and send the combined result to the adapter.
+  function tongyiFetchConversation(item, retryCount) {
+    var convId = item.id
+    retryCount = retryCount || 0
+    var allItems = []
+
+    function fetchPage(pos) {
+      var url = tongyiBaseUrl('/api/v1/session/msg/list')
+        + '&session_id=' + encodeURIComponent(convId)
+        + '&page_size=10'
+        + '&forward=false'
+        + '&return_response_messages=true'
+        + '&event_filter=all'
+      if (pos) url += '&pos=' + encodeURIComponent(pos)
+
+      return originalFetch(url, { credentials: 'include' }).then(function (r) {
+        if (r.status === 429) {
+          syncThrottle = Math.min(Math.round(syncThrottle * 1.5), 8000)
+          if (retryCount < 4) {
+            var wait = Math.min(2000 * Math.pow(2, retryCount), 30000)
+            syncLog('429 限流，' + Math.round(wait / 1000) + 's 后重试', 'WARN')
+            return sleep(wait).then(function () {
+              return tongyiFetchConversation(item, retryCount + 1)
+            })
+          }
+          syncLog('对话 ' + convId + ' 多次 429 后放弃', 'ERROR')
+          return { ok: false }
+        }
+        if (!r.ok) {
+          syncLog('对话 ' + convId + ' 拉取失败 HTTP ' + r.status, 'ERROR')
+          return { ok: false }
+        }
+        return r.text().then(function (t) {
+          var j = JSON.parse(t)
+          var list = j.data && j.data.list ? j.data.list : []
+          allItems = allItems.concat(list)
+
+          var hasNext = !!(j.data && j.data.have_next_page)
+          var lastPos = list.length > 0 ? list[list.length - 1].pos : null
+
+          if (hasNext && lastPos) {
+            return sleep(syncThrottle).then(function () { return fetchPage(lastPos) })
+          }
+
+          // All pages collected – send the merged body
+          sendToExtension({
+            requestId: 'sync_' + Date.now() + '_' + convId,
+            platform: 'tongyi',
+            url: '/api/v1/session/msg/list',
+            body: JSON.stringify({ code: 0, data: { list: allItems } }),
+            requestBody: '',
+            isComplete: true,
+            captureMode: 'history',
+            pageTitle: item.name || '',
+          })
+          return { ok: true }
+        })
+      }).catch(function (err) {
+        syncLog('对话 ' + convId + ' 网络错误: ' + String(err), 'ERROR')
+        return { ok: false }
+      })
+    }
+
+    return fetchPage(null)
+  }
+
+  function runTongyiSync() {
+    if (!tongyiAuthQuery) {
+      syncLog('未捕获到通义千问接口参数，请刷新页面后重试', 'ERROR')
+      postProgress({ phase: 'error', error: 'no_params' })
+      syncRunning = false
+      return
+    }
+
+    syncLog('开始同步 通义千问 全部历史')
+    postProgress({ phase: 'listing', done: 0, total: 0, failed: 0 })
+
+    tongyiListAll().then(function (items) {
+      syncLog('共列举到 ' + items.length + ' 条对话，请求增量计划…')
+      var byId = {}
+      for (var k = 0; k < items.length; k++) byId[items[k].id] = items[k]
+      return requestPlan('tongyi', items).then(function (toFetch) {
+        var ids = toFetch || []
+        syncLog('需要拉取 ' + ids.length + ' 条（其余已是最新）')
+        postProgress({ phase: 'fetching', done: 0, total: ids.length, failed: 0 })
+        if (ids.length === 0) {
+          postProgress({ phase: 'done', done: 0, total: 0, failed: 0 })
+          syncRunning = false
+          return
+        }
+
+        var i = 0
+        function next() {
+          if (i >= ids.length) {
+            syncLog('同步完成：成功 ' + (ids.length - syncFailed) + ' / ' + ids.length + '，失败 ' + syncFailed, syncFailed ? 'WARN' : 'INFO')
+            postProgress({ phase: 'done', done: ids.length, total: ids.length, failed: syncFailed })
+            syncRunning = false
+            return
+          }
+          var item = byId[ids[i]] || { id: ids[i], name: '' }
+          tongyiFetchConversation(item).then(function (res) {
             if (!res || !res.ok) syncFailed++
             i++
             postProgress({ phase: 'fetching', done: i, total: ids.length, failed: syncFailed })

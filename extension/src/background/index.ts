@@ -7,7 +7,7 @@ import { exportAsJSON, exportAsMarkdown } from '../storage/export'
 const PLATFORM_PATTERNS: Record<string, string[]> = {
   chatgpt: ['chat.openai.com', 'chatgpt.com'],
   gemini: ['gemini.google.com'],
-  tongyi: ['tongyi.aliyun.com', 'qianwen.aliyun.com'],
+  tongyi: ['tongyi.aliyun.com', 'qianwen.aliyun.com', 'www.qianwen.com', 'qianwen.com'],
   doubao: ['doubao.com'],
   deepseek: ['chat.deepseek.com'],
 }

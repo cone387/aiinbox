@@ -16,6 +16,9 @@
     "https://gemini.google.com/*",
     "https://tongyi.aliyun.com/*",
     "https://qianwen.aliyun.com/*",
+    "https://www.qianwen.com/*",
+    "https://chat2.qianwen.com/*",
+    "https://chat2-api.qianwen.com/*",
     "https://www.doubao.com/*",
     "https://doubao.com/*",
     "https://chat.deepseek.com/*",
@@ -35,6 +38,7 @@
         "https://gemini.google.com/*",
         "https://tongyi.aliyun.com/*",
         "https://qianwen.aliyun.com/*",
+        "https://www.qianwen.com/*",
         "https://www.doubao.com/*",
         "https://doubao.com/*",
         "https://chat.deepseek.com/*"
@@ -52,6 +56,7 @@
         "https://gemini.google.com/*",
         "https://tongyi.aliyun.com/*",
         "https://qianwen.aliyun.com/*",
+        "https://www.qianwen.com/*",
         "https://www.doubao.com/*",
         "https://doubao.com/*",
         "https://chat.deepseek.com/*"
