@@ -512,7 +512,10 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       }
 
       case 'RETRY_FAILED': {
-        syncPendingConversations()
+        // Run sync in background, don't block response
+        syncPendingConversations().catch(err => {
+          console.error('[AI Inbox] Sync error:', err)
+        })
         sendResponse({ ok: true })
         break
       }
@@ -713,17 +716,48 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
 
 // Sync all pending/failed conversations
 async function syncPendingConversations(): Promise<void> {
-  if (config.offlineMode) return
+  if (config.offlineMode) {
+    console.log('[AI Inbox] Sync skipped: offline mode')
+    return
+  }
   const server = config.servers?.[config.activeServerIndex]
-  if (!server?.url || !server?.token) return
-  if (!cachedHealth.server || !cachedHealth.auth) return
+  if (!server?.url || !server?.token) {
+    console.log('[AI Inbox] Sync skipped: no server configured')
+    chrome.runtime.sendMessage({
+      type: 'SYNC_COMPLETE',
+      success: 0,
+      failed: 0,
+      errors: ['未配置服务器'],
+    })
+    return
+  }
+  if (!cachedHealth.server || !cachedHealth.auth) {
+    console.log('[AI Inbox] Sync skipped: server not healthy')
+    chrome.runtime.sendMessage({
+      type: 'SYNC_COMPLETE',
+      success: 0,
+      failed: 0,
+      errors: ['服务器未连接或授权失败'],
+    })
+    return
+  }
 
   const pending = await getPending()
-  if (pending.length === 0) return
+  if (pending.length === 0) {
+    console.log('[AI Inbox] Sync skipped: no pending conversations')
+    chrome.runtime.sendMessage({
+      type: 'SYNC_COMPLETE',
+      success: 0,
+      failed: 0,
+      errors: [],
+    })
+    return
+  }
 
   console.log(`[AI Inbox] Syncing ${pending.length} pending conversations`)
   let successCount = 0
   let failCount = 0
+  const errors: string[] = []
   
   // Broadcast sync start
   chrome.runtime.sendMessage({
@@ -751,9 +785,11 @@ async function syncPendingConversations(): Promise<void> {
       }
     } catch (err) {
       failCount++
+      const errorMsg = String(err)
+      errors.push(errorMsg)
       console.error(`[AI Inbox] Failed to sync conversation:`, err)
       // If rate limited (429), wait longer before continuing
-      if (String(err).includes('429')) {
+      if (errorMsg.includes('429')) {
         console.log('[AI Inbox] Rate limited, waiting 10s before continuing...')
         await new Promise(resolve => setTimeout(resolve, 10000))
       }
@@ -764,19 +800,11 @@ async function syncPendingConversations(): Promise<void> {
   console.log(`[AI Inbox] Sync completed: ${successCount} success, ${failCount} failed`)
   
   // Broadcast sync completion with results
-  const errors: string[] = []
-  const failedConvs = await getPending() // Get remaining failed conversations
-  for (const conv of failedConvs.slice(0, 10)) {
-    if (conv.lastSyncError) {
-      errors.push(conv.lastSyncError)
-    }
-  }
-  
   chrome.runtime.sendMessage({
     type: 'SYNC_COMPLETE',
     success: successCount,
     failed: failCount,
-    errors: errors,
+    errors: errors.slice(0, 10), // Limit to 10 errors
   })
 }
 

@@ -1,1 +1,1 @@
-feat: add sync result display with error details  
+fix: add debug logs and error handling for sync process  
