@@ -762,6 +762,22 @@ async function syncPendingConversations(): Promise<void> {
   
   lastSyncTime = new Date().toISOString()
   console.log(`[AI Inbox] Sync completed: ${successCount} success, ${failCount} failed`)
+  
+  // Broadcast sync completion with results
+  const errors: string[] = []
+  const failedConvs = await getPending() // Get remaining failed conversations
+  for (const conv of failedConvs.slice(0, 10)) {
+    if (conv.lastSyncError) {
+      errors.push(conv.lastSyncError)
+    }
+  }
+  
+  chrome.runtime.sendMessage({
+    type: 'SYNC_COMPLETE',
+    success: successCount,
+    failed: failCount,
+    errors: errors,
+  })
 }
 
 // Set up sync alarm

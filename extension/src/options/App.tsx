@@ -23,6 +23,7 @@ function App() {
   const [exporting, setExporting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
 
   useEffect(() => {
     loadConfig().then((cfg) => {
@@ -79,59 +80,57 @@ function App() {
   async function handleRetryFailed() {
     setSyncing(true)
     setSyncProgress({ current: 0, total: cacheTotal.failed })
+    setSyncResult(null)
     
     const listener = (message: any) => {
       if (message.type === 'SYNC_PROGRESS') {
         setSyncProgress({ current: message.current, total: message.total })
+      }
+      if (message.type === 'SYNC_COMPLETE') {
+        setSyncResult({
+          success: message.success,
+          failed: message.failed,
+          errors: message.errors || [],
+        })
       }
     }
     chrome.runtime.onMessage.addListener(listener)
     
     await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
     
-    // Keep progress bar visible for 5 seconds after sync completes
+    // Keep progress and result visible, don't auto-hide
     setTimeout(() => {
       chrome.runtime.onMessage.removeListener(listener)
       setSyncing(false)
-      setMessage(`已触发重新同步，请等待进度条完成`)
-      setTimeout(() => {
-        setSyncProgress(null)
-        setMessage('')
-        loadCacheStats()
-      }, 5000)
     }, 1000)
   }
 
   async function handleSyncNow() {
     setSyncing(true)
     setSyncProgress({ current: 0, total: cacheTotal.pending })
-    try {
-      // Listen for sync progress updates
-      const listener = (message: any) => {
-        if (message.type === 'SYNC_PROGRESS') {
-          setSyncProgress({ current: message.current, total: message.total })
-        }
+    setSyncResult(null)
+    
+    const listener = (message: any) => {
+      if (message.type === 'SYNC_PROGRESS') {
+        setSyncProgress({ current: message.current, total: message.total })
       }
-      chrome.runtime.onMessage.addListener(listener)
-      
-      await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
-      
-      // Keep progress bar visible for 5 seconds after sync completes
-      setTimeout(() => {
-        chrome.runtime.onMessage.removeListener(listener)
-        setSyncing(false)
-        setMessage('同步已完成')
-        setTimeout(() => {
-          setSyncProgress(null)
-          setMessage('')
-          loadCacheStats()
-        }, 5000)
-      }, 1000)
-    } catch (err) {
-      setSyncing(false)
-      setSyncProgress(null)
-      setMessage('同步失败: ' + err)
+      if (message.type === 'SYNC_COMPLETE') {
+        setSyncResult({
+          success: message.success,
+          failed: message.failed,
+          errors: message.errors || [],
+        })
+      }
     }
+    chrome.runtime.onMessage.addListener(listener)
+    
+    await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
+    
+    // Keep progress and result visible, don't auto-hide
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(listener)
+      setSyncing(false)
+    }, 1000)
   }
 
   async function loadConfig(): Promise<ExtensionConfig | null> {
@@ -395,22 +394,75 @@ function App() {
             </div>
             
             {/* Sync Progress Bar */}
-            {syncProgress && (
-              <div style={{ marginBottom: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-                  <span>同步进度</span>
-                  <span>{syncProgress.current}/{syncProgress.total} ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)</span>
-                </div>
-                <div style={{ width: '100%', height: '6px', backgroundColor: '#e5e7eb', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      width: `${(syncProgress.current / syncProgress.total) * 100}%`,
-                      height: '100%',
-                      backgroundColor: '#2563eb',
-                      transition: 'width 0.3s ease',
-                    }}
-                  />
-                </div>
+            {(syncProgress || syncResult) && (
+              <div style={{ marginBottom: '12px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                {syncProgress && !syncResult && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
+                      <span>同步进度</span>
+                      <span>{syncProgress.current}/{syncProgress.total} ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)</span>
+                    </div>
+                    <div style={{ width: '100%', height: '8px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${(syncProgress.current / syncProgress.total) * 100}%`,
+                          height: '100%',
+                          backgroundColor: '#2563eb',
+                          transition: 'width 0.3s ease',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                
+                {syncResult && (
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: syncResult.failed > 0 ? '#d97706' : '#16a34a' }}>
+                      {syncResult.failed > 0 ? '⚠️ 同步完成（部分失败）' : '✅ 同步完成'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
+                      成功: <strong style={{ color: '#16a34a' }}>{syncResult.success}</strong>
+                      {syncResult.failed > 0 && (
+                        <span> | 失败: <strong style={{ color: '#dc2626' }}>{syncResult.failed}</strong></span>
+                      )}
+                    </div>
+                    {syncResult.errors && syncResult.errors.length > 0 && (
+                      <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fef2f2', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 500, color: '#dc2626', marginBottom: '4px' }}>失败原因：</div>
+                        {syncResult.errors.slice(0, 5).map((error, idx) => (
+                          <div key={idx} style={{ fontSize: '11px', color: '#991b1b', marginBottom: '2px', fontFamily: 'monospace' }}>
+                            • {error}
+                          </div>
+                        ))}
+                        {syncResult.errors.length > 5 && (
+                          <div style={{ fontSize: '11px', color: '#991b1b', marginTop: '4px' }}>
+                            ... 还有 {syncResult.errors.length - 5} 个错误
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => {
+                          setSyncProgress(null)
+                          setSyncResult(null)
+                          loadCacheStats()
+                        }}
+                        style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}
+                      >
+                        关闭
+                      </button>
+                      {syncResult.failed > 0 && (
+                        <button
+                          onClick={handleRetryFailed}
+                          style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #fde68a', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}
+                        >
+                          重试失败项
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             
