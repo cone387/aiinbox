@@ -1,6 +1,6 @@
 import { getAdapterByPlatform } from '../adapters'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG, LOCAL_SERVICE_URL } from '../types'
-import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, getAllConversations, CachedConversation } from '../storage/db'
+import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, resetFailedAttempts, getAllConversations, CachedConversation } from '../storage/db'
 import { exportAsJSON, exportAsMarkdown } from '../storage/export'
 
 // Platform URL detection patterns
@@ -512,9 +512,15 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       }
 
       case 'RETRY_FAILED': {
-        // Run sync in background, don't block response
-        syncPendingConversations().catch(err => {
-          console.error('[AI Inbox] Sync error:', err)
+        // Reset failed attempts and retry all failed conversations
+        resetFailedAttempts().then(count => {
+          console.log(`[AI Inbox] Reset ${count} failed conversations to pending`)
+          // Run sync in background, don't block response
+          syncPendingConversations().catch(err => {
+            console.error('[AI Inbox] Sync error:', err)
+          })
+        }).catch(err => {
+          console.error('[AI Inbox] Failed to reset attempts:', err)
         })
         sendResponse({ ok: true })
         break
