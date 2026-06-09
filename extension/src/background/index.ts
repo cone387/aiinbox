@@ -745,17 +745,17 @@ async function syncPendingConversations(): Promise<void> {
         total: pending.length,
       })
       
-      // Add delay between uploads to avoid rate limiting (500ms per request)
+      // Add delay between uploads to avoid rate limiting (1s per request)
       if (i < pending.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise(resolve => setTimeout(resolve, 1000))
       }
     } catch (err) {
       failCount++
       console.error(`[AI Inbox] Failed to sync conversation:`, err)
       // If rate limited (429), wait longer before continuing
       if (String(err).includes('429')) {
-        console.log('[AI Inbox] Rate limited, waiting 5s before continuing...')
-        await new Promise(resolve => setTimeout(resolve, 5000))
+        console.log('[AI Inbox] Rate limited, waiting 10s before continuing...')
+        await new Promise(resolve => setTimeout(resolve, 10000))
       }
     }
   }

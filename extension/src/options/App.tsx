@@ -89,14 +89,17 @@ function App() {
     
     await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
     
+    // Keep progress bar visible for 5 seconds after sync completes
     setTimeout(() => {
       chrome.runtime.onMessage.removeListener(listener)
-      setSyncProgress(null)
-      setMessage('已触发重新同步')
-      setTimeout(() => setMessage(''), 3000)
-      setTimeout(loadCacheStats, 1500)
+      setSyncing(false)
+      setMessage(`已触发重新同步，请等待进度条完成`)
+      setTimeout(() => {
+        setSyncProgress(null)
+        setMessage('')
+        loadCacheStats()
+      }, 5000)
     }, 1000)
-    setSyncing(false)
   }
 
   async function handleSyncNow() {
@@ -113,19 +116,22 @@ function App() {
       
       await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
       
-      // Remove listener after sync completes
+      // Keep progress bar visible for 5 seconds after sync completes
       setTimeout(() => {
         chrome.runtime.onMessage.removeListener(listener)
-        setSyncProgress(null)
+        setSyncing(false)
         setMessage('同步已完成')
-        setTimeout(() => setMessage(''), 3000)
-        setTimeout(loadCacheStats, 1000)
+        setTimeout(() => {
+          setSyncProgress(null)
+          setMessage('')
+          loadCacheStats()
+        }, 5000)
       }, 1000)
     } catch (err) {
+      setSyncing(false)
       setSyncProgress(null)
       setMessage('同步失败: ' + err)
     }
-    setSyncing(false)
   }
 
   async function loadConfig(): Promise<ExtensionConfig | null> {

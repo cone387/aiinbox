@@ -1,1 +1,1 @@
-feat: add sync progress bar  
+fix: improve sync progress visibility and rate limit handling  
