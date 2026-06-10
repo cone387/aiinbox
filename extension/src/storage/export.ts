@@ -1,14 +1,11 @@
 import { Platform } from '../types'
 import { getAllConversations } from './db'
 
-export async function exportAsJSON(filter?: { platform?: Platform; syncStatus?: string }): Promise<string> {
+export async function exportAsJSON(filter?: { platform?: Platform }): Promise<string> {
   let conversations = await getAllConversations()
 
   if (filter?.platform) {
     conversations = conversations.filter(c => c.platform === filter.platform)
-  }
-  if (filter?.syncStatus) {
-    conversations = conversations.filter(c => c.syncStatus === filter.syncStatus)
   }
 
   const exportData = {

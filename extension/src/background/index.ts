@@ -288,8 +288,6 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
             createdAt: conv.createdAt,
             updatedAt: conv.updatedAt,
             captureMode: captureMode as 'turn' | 'history',
-            syncStatus: 'pending',
-            syncAttempts: 0,
             cachedAt: new Date().toISOString(),
             syncServers: {},
           }
@@ -571,6 +569,26 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
             }
           }
 
+          // Reconcile: mark conversations that are on the server but not locally 'synced'
+          const serverConvIds = new Set<string>()
+          for (const plat of Object.keys(serverPlatforms)) {
+            for (const item of (serverPlatforms[plat]?.items || [])) {
+              serverConvIds.add(`${plat}:${item.conversation_id}`)
+            }
+          }
+          const reconcileIds: string[] = []
+          for (const conv of localConvs) {
+            if (serverConvIds.has(`${conv.platform}:${conv.conversationId}`) && conv.syncServers?.[serverUrl]?.status !== 'synced') {
+              reconcileIds.push(conv.id)
+            }
+          }
+          if (reconcileIds.length > 0) {
+            console.log(`[AI Inbox] GET_SERVER_SYNC_STATUS: reconciling ${reconcileIds.length} conversations for ${serverUrl}`)
+            await Promise.all(reconcileIds.map(id => markSynced(id, serverUrl)))
+            // Reset failed counts since we just reconciled
+            for (const plat of Object.keys(localFailedByPlatform)) localFailedByPlatform[plat] = 0
+          }
+
           // Build comparison: per platform
           const platforms: Record<string, { total: number; synced: number; pending: number; failed: number }> = {}
           let totalLocal = 0
@@ -648,13 +666,32 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         // Find the token for the target server
         const targetServer = config.servers?.find(s => s.url === serverUrl)
         const targetToken = targetServer?.token
-        resetFailedAttempts(serverUrl).then(count => {
+        try {
+          const count = await resetFailedAttempts(serverUrl)
           console.log(`[AI Inbox] Reset ${count} failed conversations to pending for ${serverUrl}`)
+          // Fire-and-forget: sync runs in background after response
           syncPendingConversations(serverUrl, targetToken).catch(err => {
-            console.error('[AI Inbox] Sync error:', err)
+            console.error('[AI Inbox] Sync error after retry:', err)
           })
-        }).catch(err => {
+        } catch (err) {
           console.error('[AI Inbox] Failed to reset attempts:', err)
+        }
+        sendResponse({ ok: true })
+        break
+      }
+
+      case 'SYNC_PENDING': {
+        // Sync all pending conversations for a specific server (without resetting failed)
+        const syncServerUrl = (message.serverUrl as string) || config.servers?.[config.activeServerIndex]?.url
+        if (!syncServerUrl) {
+          sendResponse({ ok: false, error: 'no_server_url' })
+          break
+        }
+        const syncServer = config.servers?.find(s => s.url === syncServerUrl)
+        const syncToken = syncServer?.token
+        // Fire-and-forget
+        syncPendingConversations(syncServerUrl, syncToken).catch(err => {
+          console.error('[AI Inbox] Sync error:', err)
         })
         sendResponse({ ok: true })
         break
@@ -979,6 +1016,21 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
     const allLocal = await getAllConversations()
     pending = allLocal.filter(conv => !serverConvIds.has(`${conv.platform}:${conv.conversationId}`))
     console.log(`[AI Inbox] Server has ${serverConvIds.size} conversations, local has ${allLocal.length}, pending: ${pending.length}`)
+
+    // Reconcile: if a conversation is on the server but local status isn't 'synced', fix it
+    const reconcileUpdates: string[] = []
+    for (const conv of allLocal) {
+      if (serverConvIds.has(`${conv.platform}:${conv.conversationId}`)) {
+        const localStatus = conv.syncServers?.[serverUrl]?.status
+        if (localStatus !== 'synced') {
+          reconcileUpdates.push(conv.id)
+        }
+      }
+    }
+    if (reconcileUpdates.length > 0) {
+      console.log(`[AI Inbox] Reconciling ${reconcileUpdates.length} conversations: on server but local status != synced, marking as synced`)
+      await Promise.all(reconcileUpdates.map(id => markSynced(id, serverUrl)))
+    }
   } catch (err) {
     // Fallback to client-side tracking if server comparison fails
     console.warn('[AI Inbox] Server comparison failed, falling back to client tracking:', err)

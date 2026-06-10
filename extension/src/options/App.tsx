@@ -219,12 +219,21 @@ function App() {
     // Clear persisted state for this server (new sync will re-persist)
     clearPersistedSyncState(serverUrl)
 
-    // Global listener handles SYNC_PROGRESS and SYNC_COMPLETE
-    chrome.runtime.sendMessage({ type: 'RETRY_FAILED', serverUrl })
+    // Use SYNC_PENDING: sync all pending conversations without resetting failed status
+    chrome.runtime.sendMessage({ type: 'SYNC_PENDING', serverUrl })
   }
 
   function handleRetryFailed(index: number) {
-    handleSyncNow(index)
+    const serverUrl = config.servers?.[index]?.url
+    if (!serverUrl) return
+    const stats = serverStats[index] || { total: 0, pending: 0, synced: 0, failed: 0 }
+    setSyncingServer(index)
+    setSyncProgress(prev => ({ ...prev, [index]: { current: 0, total: stats.failed, success: 0, failed: 0 } }))
+    setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next })
+    clearPersistedSyncState(serverUrl)
+
+    // Use RETRY_FAILED: reset failed attempts first, then sync
+    chrome.runtime.sendMessage({ type: 'RETRY_FAILED', serverUrl })
   }
 
   async function loadConfig(): Promise<ExtensionConfig | null> {

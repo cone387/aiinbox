@@ -20,13 +20,9 @@ export interface CachedConversation {
   createdAt: string
   updatedAt: string
   captureMode: 'turn' | 'history'
-  syncStatus: 'pending' | 'synced' | 'failed'
-  syncAttempts: number
-  lastSyncError?: string
   cachedAt: string
-  syncedAt?: string
-  // Per-server sync tracking (new model)
-  syncServers?: Record<string, ServerSyncStatus>
+  // Per-server sync tracking: one dict per server, each with its own status
+  syncServers: Record<string, ServerSyncStatus>
 }
 
 export interface CacheStats {
@@ -52,7 +48,6 @@ export function openDB(): Promise<IDBDatabase> {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
         store.createIndex('platform', 'platform', { unique: false })
         store.createIndex('conversationId', 'conversationId', { unique: false })
-        store.createIndex('syncStatus', 'syncStatus', { unique: false })
         store.createIndex('platformConvId', ['platform', 'conversationId'], { unique: false })
       }
     }
@@ -86,18 +81,18 @@ export async function migrateSyncServers(serverUrls: string[], activeServerUrl: 
       if (cursor) {
         const conv = cursor.value
         if (!conv.syncServers) {
+          // One-time migration: read legacy fields from raw DB record
+          const raw = conv as any
           conv.syncServers = {}
           for (const url of serverUrls) {
             if (url === activeServerUrl) {
-              // Active server inherits legacy sync status
               conv.syncServers[url] = {
-                status: conv.syncStatus || 'pending',
-                attempts: conv.syncAttempts || 0,
-                error: conv.lastSyncError,
-                syncedAt: conv.syncedAt,
+                status: raw.syncStatus || 'pending',
+                attempts: raw.syncAttempts || 0,
+                error: raw.lastSyncError,
+                syncedAt: raw.syncedAt,
               }
             } else {
-              // Other servers: pending (need to sync)
               conv.syncServers[url] = { status: 'pending', attempts: 0 }
             }
           }
@@ -128,12 +123,8 @@ export async function saveConversation(conv: CachedConversation): Promise<void> 
     existing.captureMode = conv.captureMode
     if (newMessages.length > 0) {
       // New messages detected: mark ALL servers as pending (need to re-sync)
-      existing.syncStatus = 'pending'
-      existing.syncAttempts = 0
-      if (existing.syncServers) {
-        for (const url of Object.keys(existing.syncServers)) {
-          existing.syncServers[url] = { status: 'pending', attempts: 0 }
-        }
+      for (const url of Object.keys(existing.syncServers)) {
+        existing.syncServers[url] = { status: 'pending', attempts: 0 }
       }
     }
 
@@ -145,7 +136,7 @@ export async function saveConversation(conv: CachedConversation): Promise<void> 
     })
   }
 
-  // Ensure syncServers is initialized for new conversations
+  // Ensure syncServers is initialized
   if (!conv.syncServers) {
     conv.syncServers = {}
   }
@@ -170,17 +161,9 @@ async function getByPlatformConvId(platform: Platform, conversationId: string): 
 }
 
 /** Get the sync status for a specific server.
- *  If no per-server entry exists, treat as 'pending' (needs sync to this server).
- *  Legacy syncStatus is NOT used as fallback because it's global, not per-server. */
+ *  If no entry exists for this server, treat as 'pending'. */
 function getServerSyncStatus(conv: CachedConversation, serverUrl: string): ServerSyncStatus {
-  if (conv.syncServers?.[serverUrl]) {
-    return conv.syncServers[serverUrl]
-  }
-  // No per-server entry: this conversation hasn't been synced to this server yet
-  return {
-    status: 'pending',
-    attempts: 0,
-  }
+  return conv.syncServers[serverUrl] || { status: 'pending', attempts: 0 }
 }
 
 /**
@@ -211,9 +194,6 @@ export async function markSynced(id: string, serverUrl: string): Promise<void> {
           attempts: 0,
           syncedAt: new Date().toISOString(),
         }
-        // Update legacy fields for backward compatibility
-        conv.syncStatus = 'synced'
-        conv.syncedAt = new Date().toISOString()
         store.put(conv)
       }
       tx.oncomplete = () => resolve()
@@ -239,10 +219,6 @@ export async function markFailed(id: string, serverUrl: string, error: string): 
           attempts: (current?.attempts || 0) + 1,
           error,
         }
-        // Update legacy fields for backward compatibility
-        conv.syncStatus = 'failed'
-        conv.syncAttempts = conv.syncServers[serverUrl].attempts
-        conv.lastSyncError = error
         store.put(conv)
       }
       tx.oncomplete = () => resolve()
@@ -269,7 +245,6 @@ export async function resetFailedAttempts(serverUrl: string): Promise<number> {
           store.put(conv)
           resetCount++
         } else if (!conv.syncServers?.[serverUrl]) {
-          // Legacy data not yet migrated: treat as pending
           if (!conv.syncServers) conv.syncServers = {}
           conv.syncServers[serverUrl] = { status: 'pending', attempts: 0 }
           store.put(conv)
@@ -319,21 +294,14 @@ export async function clearSynced(serverUrl: string): Promise<number> {
       if (cursor) {
         const conv = cursor.value
         const ss = conv.syncServers?.[serverUrl]
-        const legacySynced = !conv.syncServers && conv.syncStatus === 'synced'
-        if (ss?.status === 'synced' || legacySynced) {
-          if (conv.syncServers) {
-            delete conv.syncServers[serverUrl]
-            if (Object.keys(conv.syncServers).length === 0) {
-              store.delete(cursor.primaryKey)
-              deleted++
-            } else {
-              store.put(conv)
-              deleted++
-            }
-          } else {
+        if (ss?.status === 'synced') {
+          delete conv.syncServers[serverUrl]
+          if (Object.keys(conv.syncServers).length === 0) {
             store.delete(cursor.primaryKey)
-            deleted++
+          } else {
+            store.put(conv)
           }
+          deleted++
         }
         cursor.continue()
       }
@@ -343,7 +311,17 @@ export async function clearSynced(serverUrl: string): Promise<number> {
   })
 }
 
-/** Get stats for a specific server */
+/** Derive a single overall status from a conversation's syncServers map.
+ *  Used when no specific serverUrl is requested (global stats). */
+function deriveOverallStatus(conv: CachedConversation): 'pending' | 'synced' | 'failed' {
+  const entries = Object.values(conv.syncServers || {})
+  if (entries.length === 0) return 'pending'
+  if (entries.some(e => e.status === 'synced')) return 'synced'
+  if (entries.some(e => e.status === 'failed')) return 'failed'
+  return 'pending'
+}
+
+/** Get stats for a specific server, or global stats across all servers */
 export async function getStats(serverUrl?: string): Promise<CacheStats> {
   const conversations = await getAllConversations()
   const stats: CacheStats = { total: conversations.length, pending: 0, synced: 0, failed: 0 }
@@ -355,9 +333,10 @@ export async function getStats(serverUrl?: string): Promise<CacheStats> {
       else if (s.status === 'synced') stats.synced++
       else if (s.status === 'failed') stats.failed++
     } else {
-      if (conv.syncStatus === 'pending') stats.pending++
-      else if (conv.syncStatus === 'synced') stats.synced++
-      else if (conv.syncStatus === 'failed') stats.failed++
+      const status = deriveOverallStatus(conv)
+      if (status === 'pending') stats.pending++
+      else if (status === 'synced') stats.synced++
+      else if (status === 'failed') stats.failed++
     }
   }
   return stats
@@ -376,9 +355,10 @@ export async function getStatsByPlatform(serverUrl?: string): Promise<PlatformSt
       else if (ss.status === 'synced') s.synced++
       else if (ss.status === 'failed') s.failed++
     } else {
-      if (conv.syncStatus === 'pending') s.pending++
-      else if (conv.syncStatus === 'synced') s.synced++
-      else if (conv.syncStatus === 'failed') s.failed++
+      const status = deriveOverallStatus(conv)
+      if (status === 'pending') s.pending++
+      else if (status === 'synced') s.synced++
+      else if (status === 'failed') s.failed++
     }
   }
   return byPlatform
