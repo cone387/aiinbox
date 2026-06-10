@@ -1,1 +1,1 @@
-fix: failed count now uses per-server syncServers status instead of global syncStatus  
+fix: sync progress persists after refresh with global listener and serverUrl in messages  

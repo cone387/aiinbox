@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { ExtensionConfig, ServerConfig, DEFAULT_CONFIG, Platform, PLATFORMS } from '../types'
 import { platformLabels, PlatformIcon, ExportIcon } from '../shared/platforms'
 
@@ -27,6 +27,7 @@ function App() {
   const [syncResult, setSyncResult] = useState<Record<number, { success: number; failed: number; errors: string[] }>>({})
   const [showGuide, setShowGuide] = useState(false)
   const [cacheSize, setCacheSize] = useState<string>('')
+  const configRef = useRef<ExtensionConfig>(DEFAULT_CONFIG)
 
   async function estimateCacheSize() {
     try {
@@ -41,26 +42,69 @@ function App() {
     }
   }
 
-  // Load persisted sync states from background
+  // Load persisted sync states from background and set up global listener
   async function loadPersistedSyncStates(cfg: ExtensionConfig) {
     try {
       const resp = await chrome.runtime.sendMessage({ type: 'GET_SYNC_STATES' })
       if (!resp?.states) return
       const states = resp.states as Record<string, { progress: any; result: any; updatedAt: string }>
       if (!cfg.servers) return
+      let hasActiveSync = false
       for (let i = 0; i < cfg.servers.length; i++) {
         const serverUrl = cfg.servers[i]?.url
         if (!serverUrl || !states[serverUrl]) continue
         const state = states[serverUrl]
         if (state.progress) {
           setSyncProgress(prev => ({ ...prev, [i]: state.progress }))
+          // If there's progress but no result, sync is still running
+          if (!state.result) hasActiveSync = true
         }
         if (state.result) {
           setSyncResult(prev => ({ ...prev, [i]: state.result }))
         }
       }
+      // If any sync is still active, set syncingServer to show progress
+      if (hasActiveSync) {
+        // Find the first server with active sync
+        for (let i = 0; i < cfg.servers.length; i++) {
+          const serverUrl = cfg.servers[i]?.url
+          if (serverUrl && states[serverUrl]?.progress && !states[serverUrl]?.result) {
+            setSyncingServer(i)
+            break
+          }
+        }
+      }
+      // Set up global listener for SYNC_PROGRESS and SYNC_COMPLETE
+      // (called once per page load, not inside loadPersistedSyncStates)
     } catch {}
   }
+
+  function setupGlobalSyncListener() {
+    const listener = (msg: any) => {
+      if (msg.type !== 'SYNC_PROGRESS' && msg.type !== 'SYNC_COMPLETE') return
+      const serverUrl = msg.serverUrl as string
+      if (!serverUrl) return
+      // Find the index for this server using configRef
+      const cfg = configRef.current
+      const index = cfg.servers?.findIndex(s => s.url === serverUrl)
+      if (index === undefined || index < 0) return
+
+      if (msg.type === 'SYNC_PROGRESS') {
+        setSyncProgress(prev => ({ ...prev, [index]: { current: msg.current, total: msg.total, success: msg.success || 0, failed: msg.failed || 0 } }))
+      }
+      if (msg.type === 'SYNC_COMPLETE') {
+        setSyncResult(prev => ({ ...prev, [index]: { success: msg.success, failed: msg.failed, errors: msg.errors || [] } }))
+        setSyncingServer(null)
+        reloadAllStats()
+      }
+    }
+    chrome.runtime.onMessage.addListener(listener)
+  }
+
+  // Keep configRef in sync with config
+  useEffect(() => {
+    configRef.current = config
+  }, [config])
 
   useEffect(() => {
     loadConfig().then((cfg) => {
@@ -75,8 +119,9 @@ function App() {
         if (!hasValidServer && !cfg.offlineMode) {
           setShowGuide(true)
         }
-        // Load persisted sync states
+        // Load persisted sync states and set up global listener
         loadPersistedSyncStates(cfg)
+        setupGlobalSyncListener()
       }
     })
     loadGlobalStatistics()
@@ -178,21 +223,8 @@ function App() {
     // Clear persisted state for this server (new sync will re-persist)
     clearPersistedSyncState(serverUrl)
 
-    const listener = (msg: any) => {
-      if (msg.type === 'SYNC_PROGRESS') {
-        setSyncProgress(prev => ({ ...prev, [index]: { current: msg.current, total: msg.total, success: msg.success || 0, failed: msg.failed || 0 } }))
-      }
-      if (msg.type === 'SYNC_COMPLETE') {
-        setSyncResult(prev => ({ ...prev, [index]: { success: msg.success, failed: msg.failed, errors: msg.errors || [] } }))
-      }
-    }
-    chrome.runtime.onMessage.addListener(listener)
+    // Global listener handles SYNC_PROGRESS and SYNC_COMPLETE
     chrome.runtime.sendMessage({ type: 'RETRY_FAILED', serverUrl })
-    setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(listener)
-      setSyncingServer(null)
-      reloadAllStats()
-    }, 1000)
   }
 
   function handleRetryFailed(index: number) {

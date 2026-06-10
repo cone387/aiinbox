@@ -933,6 +933,7 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
     console.log('[AI Inbox] Sync skipped: no server configured')
     chrome.runtime.sendMessage({
       type: 'SYNC_COMPLETE',
+      serverUrl: server?.url || '',
       success: 0,
       failed: 0,
       errors: ['未配置服务器'],
@@ -944,6 +945,7 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
     console.log('[AI Inbox] Sync skipped: server not healthy')
     chrome.runtime.sendMessage({
       type: 'SYNC_COMPLETE',
+      serverUrl: server.url,
       success: 0,
       failed: 0,
       errors: ['服务器未连接或授权失败'],
@@ -987,6 +989,7 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
     console.log('[AI Inbox] Sync skipped: no pending conversations')
     chrome.runtime.sendMessage({
       type: 'SYNC_COMPLETE',
+      serverUrl: server.url,
       success: 0,
       failed: 0,
       errors: [],
@@ -1013,7 +1016,7 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
   // Broadcast sync start
   // Persist progress to storage
   const progressData = { current: 0, total: pending.length, success: 0, failed: 0 }
-  chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', ...progressData }).catch(() => {})
+  chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', serverUrl: server.url, ...progressData }).catch(() => {})
   persistSyncState(server.url, progressData, null)
   
   // Process in batches of SYNC_CONCURRENCY
@@ -1064,6 +1067,7 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
     const progressUpdate = { current: processedCount, total: pending.length, success: successCount, failed: failCount }
     chrome.runtime.sendMessage({
       type: 'SYNC_PROGRESS',
+      serverUrl: server.url,
       ...progressUpdate,
     }).catch(() => {})
     persistSyncState(server.url, progressUpdate, null)
@@ -1085,6 +1089,7 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
   const resultData = { success: successCount, failed: failCount, errors: errors.slice(0, 10) }
   chrome.runtime.sendMessage({
     type: 'SYNC_COMPLETE',
+    serverUrl: server.url,
     ...resultData,
   }).catch(() => {})
   persistSyncState(server.url, null, resultData)
