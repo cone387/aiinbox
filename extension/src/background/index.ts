@@ -186,9 +186,12 @@ async function checkServerHealth(url: string, token?: string): Promise<{ server:
 
   cachedHealth = { server: serverOk, auth: authOk }
 
-  // Trigger sync when server is healthy
+  // Only trigger sync if this health check matches the current active server
   if (serverOk && authOk) {
-    syncPendingConversations()
+    const activeServer = config.servers?.[config.activeServerIndex]
+    if (activeServer?.url === url && activeServer?.token) {
+      syncPendingConversations()
+    }
   }
 
   return cachedHealth
@@ -926,7 +929,38 @@ async function syncPendingConversations(): Promise<void> {
     return
   }
 
-  const pending = await getPending(server.url)
+  // Use server-side comparison instead of client-side syncServers tracking
+  let pending: CachedConversation[]
+  try {
+    const serverUrl = server.url.replace(/\/$/, '')
+    const resp = await fetch(`${serverUrl}/api/v1/conversations/synced`, {
+      headers: { 'Authorization': 'Bearer ' + server.token },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`)
+    }
+    const data = await resp.json()
+    const serverPlatforms = data.platforms || {}
+
+    // Build server-side set of conversation IDs
+    const serverConvIds = new Set<string>()
+    for (const plat of Object.keys(serverPlatforms)) {
+      for (const item of (serverPlatforms[plat]?.items || [])) {
+        serverConvIds.add(`${plat}:${item.conversation_id}`)
+      }
+    }
+
+    // Get all local conversations and find those not on server
+    const allLocal = await getAllConversations()
+    pending = allLocal.filter(conv => !serverConvIds.has(`${conv.platform}:${conv.conversationId}`))
+    console.log(`[AI Inbox] Server has ${serverConvIds.size} conversations, local has ${allLocal.length}, pending: ${pending.length}`)
+  } catch (err) {
+    // Fallback to client-side tracking if server comparison fails
+    console.warn('[AI Inbox] Server comparison failed, falling back to client tracking:', err)
+    pending = await getPending(server.url)
+  }
+
   if (pending.length === 0) {
     console.log('[AI Inbox] Sync skipped: no pending conversations')
     chrome.runtime.sendMessage({
