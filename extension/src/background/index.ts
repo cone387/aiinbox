@@ -1,6 +1,6 @@
 import { getAdapterByPlatform } from '../adapters'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG, LOCAL_SERVICE_URL } from '../types'
-import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, resetFailedAttempts, resetSyncedToPending, getAllConversations, CachedConversation } from '../storage/db'
+import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, resetFailedAttempts, migrateSyncServers, getAllConversations, CachedConversation } from '../storage/db'
 import { exportAsJSON, exportAsMarkdown } from '../storage/export'
 
 // Platform URL detection patterns
@@ -88,6 +88,14 @@ async function loadConfig(): Promise<void> {
     } else {
       await chrome.storage.local.set({ config: DEFAULT_CONFIG })
       config = { ...DEFAULT_CONFIG }
+    }
+
+    // Migrate per-server sync tracking for all known servers
+    const knownUrls = (config.servers || []).map(s => s.url).filter(Boolean)
+    if (knownUrls.length > 0) {
+      migrateSyncServers(knownUrls).catch(err => {
+        console.error('[AI Inbox] Migration error:', err)
+      })
     }
 
     const server = config.servers?.[config.activeServerIndex]
@@ -279,6 +287,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
             syncStatus: 'pending',
             syncAttempts: 0,
             cachedAt: new Date().toISOString(),
+            syncServers: {},
           }
 
           try {
@@ -445,9 +454,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       }
 
       case 'SAVE_CONFIG': {
-        const prevConfig = { ...config }
-        const prevServerCount = prevConfig.servers?.length || 0
-        const prevActiveIndex = prevConfig.activeServerIndex
+        const prevServerUrls = (config.servers || []).map(s => s.url).filter(Boolean)
         
         config = message.config as ExtensionConfig
         await chrome.storage.local.set({ config })
@@ -462,20 +469,14 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           updateIcon('paused')
         }
         
-        // Detect if a new server was added or active server changed
-        const newServerCount = config.servers?.length || 0
-        const activeChanged = prevActiveIndex !== config.activeServerIndex
-        const serverAdded = newServerCount > prevServerCount
-        
-        if ((serverAdded || activeChanged) && !config.offlineMode) {
-          // Reset synced conversations to pending so they sync to the new server
-          resetSyncedToPending().then(count => {
-            if (count > 0) {
-              console.log(`[AI Inbox] Reset ${count} synced conversations to pending (new server or server switch)`)
-            }
-          }).catch(err => {
-            console.error('[AI Inbox] Failed to reset synced:', err)
-          })
+        // Detect new servers and migrate their sync tracking
+        const newServerUrls = (config.servers || []).map(s => s.url).filter(Boolean)
+        const addedUrls = newServerUrls.filter(url => !prevServerUrls.includes(url))
+        if (addedUrls.length > 0) {
+          console.log(`[AI Inbox] New servers added: ${addedUrls.join(', ')}`)
+          migrateSyncServers(addedUrls).then(count => {
+            if (count > 0) console.log(`[AI Inbox] Migrated ${count} conversations for new servers`)
+          }).catch(err => console.error('[AI Inbox] Migration error:', err))
         }
         
         if (!config.offlineMode && server?.url && server?.token) {
@@ -518,8 +519,9 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       }
 
       case 'GET_CACHE_STATS': {
-        const stats = await getStats()
-        const byPlatform = await getStatsByPlatform()
+        const serverUrl = message.serverUrl as string | undefined
+        const stats = await getStats(serverUrl)
+        const byPlatform = await getStatsByPlatform(serverUrl)
         sendResponse({ ...stats, byPlatform, lastSyncTime })
         break
       }
@@ -534,10 +536,14 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       }
 
       case 'RETRY_FAILED': {
-        // Reset failed attempts and retry all failed conversations
-        resetFailedAttempts().then(count => {
-          console.log(`[AI Inbox] Reset ${count} failed conversations to pending`)
-          // Run sync in background, don't block response
+        // Reset failed attempts for the specified server and retry
+        const serverUrl = (message.serverUrl as string) || config.servers?.[config.activeServerIndex]?.url
+        if (!serverUrl) {
+          sendResponse({ ok: false, error: 'no_server_url' })
+          break
+        }
+        resetFailedAttempts(serverUrl).then(count => {
+          console.log(`[AI Inbox] Reset ${count} failed conversations to pending for ${serverUrl}`)
           syncPendingConversations().catch(err => {
             console.error('[AI Inbox] Sync error:', err)
           })
@@ -556,7 +562,8 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       }
 
       case 'CLEAR_SYNCED': {
-        const deleted = await clearSynced()
+        const clearServerUrl = (message.serverUrl as string) || config.servers?.[config.activeServerIndex]?.url || ''
+        const deleted = await clearSynced(clearServerUrl)
         sendResponse({ ok: true, deleted })
         break
       }
@@ -706,7 +713,7 @@ function revertBadge(): void {
 async function uploadConversation(conv: CachedConversation): Promise<void> {
   const server = config.servers?.[config.activeServerIndex]
   if (!server?.url || !server?.token) {
-    await markFailed(conv.id, 'no_server_configured')
+    await markFailed(conv.id, server?.url || '', 'no_server_configured')
     throw new Error('no_server_configured')
   }
 
@@ -726,7 +733,7 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
   // Check network status before upload
   if (!navigator.onLine) {
     const errorMsg = 'network_offline'
-    await markFailed(conv.id, errorMsg)
+    await markFailed(conv.id, server.url, errorMsg)
     throw new Error(errorMsg)
   }
 
@@ -744,19 +751,19 @@ async function uploadConversation(conv: CachedConversation): Promise<void> {
     })
 
     if (resp.ok) {
-      await markSynced(conv.id)
+      await markSynced(conv.id, server.url)
       lastSyncTime = new Date().toISOString()
       console.log(`[AI Inbox] Uploaded ${conv.platform}/${conv.conversationId}`)
     } else {
       const text = await resp.text().catch(() => '')
       const errorMsg = `${resp.status} - ${text.slice(0, 100)}`
-      await markFailed(conv.id, errorMsg)
+      await markFailed(conv.id, server.url, errorMsg)
       console.warn(`[AI Inbox] Upload failed ${resp.status}: ${text.slice(0, 100)}`)
       throw new Error(errorMsg)
     }
   } catch (err) {
     const errorMsg = String(err)
-    await markFailed(conv.id, errorMsg)
+    await markFailed(conv.id, server.url, errorMsg)
     console.warn(`[AI Inbox] Upload error:`, err)
     throw err
   }
@@ -832,7 +839,7 @@ async function syncPendingConversations(): Promise<void> {
     return
   }
 
-  const pending = await getPending()
+  const pending = await getPending(server.url)
   if (pending.length === 0) {
     console.log('[AI Inbox] Sync skipped: no pending conversations')
     chrome.runtime.sendMessage({

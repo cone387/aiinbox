@@ -17,19 +17,24 @@ function App() {
   const [authorizing, setAuthorizing] = useState<number | null>(null)
   const [editingName, setEditingName] = useState<Record<number, boolean>>({})
   const [cacheTotal, setCacheTotal] = useState<CacheStat>({ total: 0, pending: 0, synced: 0, failed: 0 })
+  const [serverStats, setServerStats] = useState<Record<number, CacheStat>>({})
   const [cacheByPlatform, setCacheByPlatform] = useState<Record<string, CacheStat>>({})
   const [exportPlatform, setExportPlatform] = useState<Platform | 'all'>('all')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
   const [exporting, setExporting] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; success: number; failed: number } | null>(null)
-  const [syncResult, setSyncResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
+  const [syncingServer, setSyncingServer] = useState<number | null>(null)
+  const [syncProgress, setSyncProgress] = useState<Record<number, { current: number; total: number; success: number; failed: number }>>({})
+  const [syncResult, setSyncResult] = useState<Record<number, { success: number; failed: number; errors: string[] }>>({})
   const [showGuide, setShowGuide] = useState(false)
 
   useEffect(() => {
     loadConfig().then((cfg) => {
       if (cfg) {
         cfg.servers?.forEach((_, i) => checkHealth(i, cfg))
+        // Load stats for each server
+        cfg.servers?.forEach((s, i) => {
+          if (s.url) loadServerStats(i, s.url)
+        })
         // Show guide if no server is configured or not authorized
         const hasValidServer = cfg.servers?.some(s => s.url && s.token)
         if (!hasValidServer && !cfg.offlineMode) {
@@ -37,10 +42,10 @@ function App() {
         }
       }
     })
-    loadCacheStats()
+    loadGlobalStatistics()
   }, [])
 
-  async function loadCacheStats() {
+  async function loadGlobalStatistics() {
     try {
       const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
       if (stats && typeof stats.total === 'number') {
@@ -48,6 +53,22 @@ function App() {
         setCacheByPlatform(stats.byPlatform || {})
       }
     } catch {}
+  }
+
+  async function loadServerStats(index: number, serverUrl: string) {
+    try {
+      const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS', serverUrl })
+      if (stats && typeof stats.total === 'number') {
+        setServerStats(prev => ({ ...prev, [index]: { total: stats.total, pending: stats.pending, synced: stats.synced, failed: stats.failed } }))
+      }
+    } catch {}
+  }
+
+  function reloadAllStats() {
+    loadGlobalStatistics()
+    config.servers?.forEach((s, i) => {
+      if (s.url) loadServerStats(i, s.url)
+    })
   }
 
   async function handleExport() {
@@ -76,79 +97,44 @@ function App() {
     setExporting(false)
   }
 
-  async function handleClearSynced() {
-    const resp = await chrome.runtime.sendMessage({ type: 'CLEAR_SYNCED' })
+  async function handleClearSynced(index: number) {
+    const serverUrl = config.servers?.[index]?.url
+    if (!serverUrl) return
+    const resp = await chrome.runtime.sendMessage({ type: 'CLEAR_SYNCED', serverUrl })
     if (resp?.ok) {
       setMessage(`已清除 ${resp.deleted || 0} 条已同步缓存`)
       setTimeout(() => setMessage(''), 3000)
-      loadCacheStats()
+      reloadAllStats()
     }
   }
 
-  async function handleRetryFailed() {
-    setSyncing(true)
-    setSyncProgress({ current: 0, total: cacheTotal.failed, success: 0, failed: 0 })
-    setSyncResult(null)
-    
-    const listener = (message: any) => {
-      if (message.type === 'SYNC_PROGRESS') {
-        setSyncProgress({ 
-          current: message.current, 
-          total: message.total,
-          success: message.success || 0,
-          failed: message.failed || 0,
-        })
+  function handleSyncNow(index: number) {
+    const serverUrl = config.servers?.[index]?.url
+    if (!serverUrl) return
+    const stats = serverStats[index] || { total: 0, pending: 0, synced: 0, failed: 0 }
+    setSyncingServer(index)
+    setSyncProgress(prev => ({ ...prev, [index]: { current: 0, total: stats.pending, success: 0, failed: 0 } }))
+    setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next })
+
+    const listener = (msg: any) => {
+      if (msg.type === 'SYNC_PROGRESS') {
+        setSyncProgress(prev => ({ ...prev, [index]: { current: msg.current, total: msg.total, success: msg.success || 0, failed: msg.failed || 0 } }))
       }
-      if (message.type === 'SYNC_COMPLETE') {
-        setSyncResult({
-          success: message.success,
-          failed: message.failed,
-          errors: message.errors || [],
-        })
+      if (msg.type === 'SYNC_COMPLETE') {
+        setSyncResult(prev => ({ ...prev, [index]: { success: msg.success, failed: msg.failed, errors: msg.errors || [] } }))
       }
     }
     chrome.runtime.onMessage.addListener(listener)
-    
-    await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
-    
-    // Keep progress and result visible, don't auto-hide
+    chrome.runtime.sendMessage({ type: 'RETRY_FAILED', serverUrl })
     setTimeout(() => {
       chrome.runtime.onMessage.removeListener(listener)
-      setSyncing(false)
+      setSyncingServer(null)
+      reloadAllStats()
     }, 1000)
   }
 
-  async function handleSyncNow() {
-    setSyncing(true)
-    setSyncProgress({ current: 0, total: cacheTotal.pending, success: 0, failed: 0 })
-    setSyncResult(null)
-    
-    const listener = (message: any) => {
-      if (message.type === 'SYNC_PROGRESS') {
-        setSyncProgress({ 
-          current: message.current, 
-          total: message.total,
-          success: message.success || 0,
-          failed: message.failed || 0,
-        })
-      }
-      if (message.type === 'SYNC_COMPLETE') {
-        setSyncResult({
-          success: message.success,
-          failed: message.failed,
-          errors: message.errors || [],
-        })
-      }
-    }
-    chrome.runtime.onMessage.addListener(listener)
-    
-    await chrome.runtime.sendMessage({ type: 'RETRY_FAILED' })
-    
-    // Keep progress and result visible, don't auto-hide
-    setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(listener)
-      setSyncing(false)
-    }, 1000)
+  function handleRetryFailed(index: number) {
+    handleSyncNow(index)
   }
 
   async function loadConfig(): Promise<ExtensionConfig | null> {
@@ -219,7 +205,6 @@ function App() {
     const newServers = [...(config.servers || []), { url: '', token: '', name: '我的服务', isDefault: false }]
     const next = { ...config, servers: newServers, activeServerIndex: newServers.length - 1 }
     persist(next)
-    // Focus the new server's URL input after render
     setTimeout(() => {
       const inputs = document.querySelectorAll<HTMLInputElement>('input[data-server-url]')
       inputs[inputs.length - 1]?.focus()
@@ -245,6 +230,8 @@ function App() {
   function saveServerUrl(index: number) {
     persist(config)
     checkHealth(index)
+    const serverUrl = config.servers?.[index]?.url
+    if (serverUrl) loadServerStats(index, serverUrl)
   }
 
   function setActiveServer(index: number) {
@@ -278,12 +265,7 @@ function App() {
         <div style={{ padding: '16px', marginBottom: '16px', border: '2px solid #3b82f6', borderRadius: '8px', backgroundColor: '#eff6ff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ fontWeight: 600, fontSize: '15px', color: '#1e40af' }}>👋 欢迎使用 AI Inbox</div>
-            <button
-              onClick={() => setShowGuide(false)}
-              style={{ padding: '4px 10px', fontSize: '12px', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#3b82f6' }}
-            >
-              关闭
-            </button>
+            <button onClick={() => setShowGuide(false)} style={{ padding: '4px 10px', fontSize: '12px', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#3b82f6' }}>关闭</button>
           </div>
           <div style={{ fontSize: '13px', color: '#1e40af', lineHeight: 1.8 }}>
             <div style={{ marginBottom: '8px' }}><strong>快速开始：</strong></div>
@@ -291,19 +273,13 @@ function App() {
               <div style={{ flex: 1, minWidth: '200px' }}>
                 <div style={{ fontWeight: 500, marginBottom: '4px' }}>🌐 方案一：连接本地服务（推荐）</div>
                 <div style={{ fontSize: '12px', color: '#3b82f6' }}>
-                  1. 下载并启动 AI Inbox 服务端<br />
-                  2. 在下方填写服务地址<br />
-                  3. 点击“授权登录”<br />
-                  4. 自动同步所有对话
+                  1. 下载并启动 AI Inbox 服务端<br />2. 在下方填写服务地址<br />3. 点击"授权登录"<br />4. 自动同步所有对话
                 </div>
               </div>
               <div style={{ flex: 1, minWidth: '200px' }}>
                 <div style={{ fontWeight: 500, marginBottom: '4px' }}>💾 方案二：离线模式</div>
                 <div style={{ fontSize: '12px', color: '#3b82f6' }}>
-                  1. 开启下方“离线模式”<br />
-                  2. 自动捕获对话到本地<br />
-                  3. 随时导出数据<br />
-                  4. 无需任何服务端
+                  1. 开启下方"离线模式"<br />2. 自动捕获对话到本地<br />3. 随时导出数据<br />4. 无需任何服务端
                 </div>
               </div>
             </div>
@@ -319,7 +295,7 @@ function App() {
         <div>
           <div style={{ fontWeight: 500, fontSize: '14px' }}>离线模式</div>
           <div style={{ color: '#666', fontSize: '12px', marginTop: '2px' }}>
-            仅捕获到浏览器本地存储，不连接任何服务端。数据通过下方“数据导出”取出。
+            仅捕获到浏览器本地存储，不连接任何服务端。数据通过下方"数据导出"取出。
           </div>
         </div>
         <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '22px', flexShrink: 0, cursor: 'pointer' }}>
@@ -341,67 +317,41 @@ function App() {
           const authorized = !!server.token && h.auth === true
           const isActive = config.activeServerIndex === index
           const isDefault = server.isDefault
+          const ss = serverStats[index] || { total: 0, pending: 0, synced: 0, failed: 0 }
+          const isSyncing = syncingServer === index
+          const sp = syncProgress[index] || null
+          const sr = syncResult[index] || null
 
           return (
-            <div
-              key={index}
-              style={{
-                padding: '14px 16px',
-                border: isActive ? '1.5px solid #3b82f6' : '1px solid #e5e7eb',
-                borderRadius: '8px',
-                backgroundColor: isActive ? '#f8faff' : 'white',
-              }}
-            >
+            <div key={index} style={{ padding: '14px 16px', border: isActive ? '1.5px solid #3b82f6' : '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: isActive ? '#f8faff' : 'white' }}>
               {/* Header: name + active toggle + delete */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                 {editingName[index] ? (
-                  <input
-                    type="text"
-                    value={server.name}
+                  <input type="text" value={server.name}
                     onChange={(e) => updateServer(index, 'name', e.target.value)}
                     onBlur={() => { persist(config); setEditingName((e) => ({ ...e, [index]: false })) }}
                     onKeyDown={(e) => { if (e.key === 'Enter') { persist(config); setEditingName((e2) => ({ ...e2, [index]: false })) } }}
-                    autoFocus
-                    style={{ border: '1px solid #d1d5db', borderRadius: '4px', padding: '2px 6px', fontSize: '14px', fontWeight: 500, flex: 1 }}
-                    placeholder="服务名称"
-                  />
+                    autoFocus style={{ border: '1px solid #d1d5db', borderRadius: '4px', padding: '2px 6px', fontSize: '14px', fontWeight: 500, flex: 1 }} placeholder="服务名称" />
                 ) : (
-                  <span
-                    onClick={() => setEditingName((e) => ({ ...e, [index]: true }))}
-                    style={{ fontWeight: 500, fontSize: '14px', cursor: 'pointer', flex: 1 }}
-                    title="点击编辑名称"
-                  >
+                  <span onClick={() => setEditingName((e) => ({ ...e, [index]: true }))} style={{ fontWeight: 500, fontSize: '14px', cursor: 'pointer', flex: 1 }} title="点击编辑名称">
                     {server.name || '未命名服务'}
                     {!isDefault && <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: '12px', marginLeft: '6px' }}>（点击编辑）</span>}
                   </span>
                 )}
-
                 <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#64748b', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  <input type="checkbox" checked={isActive} onChange={() => setActiveServer(index)} />
-                  启用
+                  <input type="checkbox" checked={isActive} onChange={() => setActiveServer(index)} />启用
                 </label>
-
-                {!isDefault && (
-                  <button onClick={() => removeServer(index)} style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid #fecaca', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#fef2f2', color: '#dc2626' }}>
-                    删除
-                  </button>
-                )}
-                {isDefault && (
-                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>默认</span>
-                )}
+                {!isDefault && <button onClick={() => removeServer(index)} style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid #fecaca', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#fef2f2', color: '#dc2626' }}>删除</button>}
+                {isDefault && <span style={{ fontSize: '11px', color: '#94a3b8' }}>默认</span>}
               </div>
 
               {/* URL input */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                <input
-                  type="url"
-                  data-server-url
-                  value={server.url}
+                <input type="url" data-server-url value={server.url}
                   onChange={(e) => updateServer(index, 'url', e.target.value)}
                   onBlur={() => saveServerUrl(index)}
                   placeholder="http://localhost:9531  或  https://your-domain.com"
-                  style={{ flex: 1, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontFamily: 'monospace' }}
-                />
+                  style={{ flex: 1, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontFamily: 'monospace' }} />
               </div>
 
               {/* Status row */}
@@ -409,19 +359,15 @@ function App() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', gap: '14px', fontSize: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#64748b' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block', backgroundColor: h.server === true ? '#22c55e' : h.server === false ? '#ef4444' : '#d1d5db' }} />
-                      服务
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block', backgroundColor: h.server === true ? '#22c55e' : h.server === false ? '#ef4444' : '#d1d5db' }} />服务
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#64748b' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block', backgroundColor: h.auth === true ? '#22c55e' : h.auth === false ? '#ef4444' : '#d1d5db' }} />
-                      授权
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block', backgroundColor: h.auth === true ? '#22c55e' : h.auth === false ? '#ef4444' : '#d1d5db' }} />授权
                     </div>
                     {authorized && <span style={{ color: '#16a34a', fontWeight: 500 }}>✓ 已授权</span>}
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => checkHealth(index)} style={{ padding: '4px 10px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}>
-                      刷新
-                    </button>
+                    <button onClick={() => checkHealth(index)} style={{ padding: '4px 10px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}>刷新</button>
                     <button onClick={() => authorize(index)} disabled={authorizing === index}
                       style={{ padding: '4px 14px', fontSize: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer', backgroundColor: authorized ? '#16a34a' : '#2563eb', color: 'white' }}>
                       {authorizing === index ? '授权中...' : authorized ? '重新授权' : '授权登录'}
@@ -429,195 +375,109 @@ function App() {
                   </div>
                 </div>
               )}
+
+              {/* Per-server Sync Status */}
+              {server.url && ss.total > 0 && (
+                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
+                  <div style={{ display: 'flex', gap: '14px', fontSize: '12px', color: '#374151', marginBottom: '8px', flexWrap: 'wrap' }}>
+                    <span>总计: <strong>{ss.total}</strong></span>
+                    <span style={{ color: ss.pending > 0 ? '#d97706' : '#16a34a' }}>待同步: <strong>{ss.pending}</strong></span>
+                    <span style={{ color: '#16a34a' }}>已同步: <strong>{ss.synced}</strong></span>
+                    {ss.failed > 0 && <span style={{ color: '#dc2626' }}>失败: <strong>{ss.failed}</strong></span>}
+                  </div>
+
+                  {/* Sync progress/result */}
+                  {(sp || sr) && (
+                    <div style={{ marginBottom: '8px', padding: '8px 10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      {sp && !sr && (
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                            <span>同步进度</span>
+                            <span>{sp.current}/{sp.total} ({sp.total > 0 ? Math.round((sp.current / sp.total) * 100) : 0}%)</span>
+                          </div>
+                          <div style={{ width: '100%', height: '6px', backgroundColor: '#e5e7eb', borderRadius: '3px', overflow: 'hidden', marginBottom: '6px' }}>
+                            <div style={{ width: `${sp.total > 0 ? (sp.current / sp.total) * 100 : 0}%`, height: '100%', backgroundColor: '#2563eb', transition: 'width 0.3s ease' }} />
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#64748b' }}>
+                            <span>成功: <strong style={{ color: '#16a34a' }}>{sp.success}</strong></span>
+                            {sp.failed > 0 && <span>失败: <strong style={{ color: '#dc2626' }}>{sp.failed}</strong></span>}
+                          </div>
+                        </div>
+                      )}
+                      {sr && (
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 500, marginBottom: '4px', color: sr.failed > 0 ? '#d97706' : '#16a34a' }}>
+                            {sr.failed > 0 ? '⚠️ 同步完成（部分失败）' : '✅ 同步完成'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                            成功: <strong style={{ color: '#16a34a' }}>{sr.success}</strong>
+                            {sr.failed > 0 && <span> | 失败: <strong style={{ color: '#dc2626' }}>{sr.failed}</strong></span>}
+                          </div>
+                          {sr.errors && sr.errors.length > 0 && (
+                            <div style={{ padding: '6px', backgroundColor: '#fef2f2', borderRadius: '4px', border: '1px solid #fecaca', marginBottom: '6px' }}>
+                              {sr.errors.slice(0, 3).map((error, idx) => (
+                                <div key={idx} style={{ fontSize: '10px', color: '#991b1b', fontFamily: 'monospace' }}>• {error}</div>
+                              ))}
+                              {sr.errors.length > 3 && <div style={{ fontSize: '10px', color: '#991b1b' }}>... 还有 {sr.errors.length - 3} 个错误</div>}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => { setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next }); setSyncProgress(prev => { const next = { ...prev }; delete next[index]; return next }); reloadAllStats() }}
+                              style={{ padding: '3px 10px', fontSize: '11px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}>关闭</button>
+                            {sr.failed > 0 && (
+                              <button onClick={() => handleRetryFailed(index)} style={{ padding: '3px 10px', fontSize: '11px', border: '1px solid #fde68a', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}>重试失败项</button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button onClick={() => handleSyncNow(index)} disabled={isSyncing || ss.pending === 0}
+                      style={{ padding: '4px 12px', fontSize: '12px', border: 'none', borderRadius: '5px', cursor: isSyncing || ss.pending === 0 ? 'not-allowed' : 'pointer', backgroundColor: ss.pending === 0 ? '#cbd5e1' : '#2563eb', color: 'white', fontWeight: 500 }}>
+                      {isSyncing ? '同步中...' : '立即同步'}
+                    </button>
+                    {isSyncing && (
+                      <button onClick={async () => { await chrome.runtime.sendMessage({ type: 'CANCEL_SYNC' }); setSyncingServer(null); setSyncProgress(prev => { const next = { ...prev }; delete next[index]; return next }); setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next }); setMessage('已取消同步'); setTimeout(() => setMessage(''), 3000); setTimeout(reloadAllStats, 1000) }}
+                        style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #fecaca', borderRadius: '5px', cursor: 'pointer', backgroundColor: '#fef2f2', color: '#dc2626' }}>取消</button>
+                    )}
+                    {ss.failed > 0 && (
+                      <button onClick={() => handleRetryFailed(index)} disabled={isSyncing}
+                        style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #fde68a', borderRadius: '5px', cursor: isSyncing ? 'not-allowed' : 'pointer', backgroundColor: isSyncing ? '#f3f4f6' : '#fffbeb', color: isSyncing ? '#9ca3af' : '#d97706' }}>
+                        重试失败 ({ss.failed})
+                      </button>
+                    )}
+                    {ss.synced > 0 && (
+                      <button onClick={() => handleClearSynced(index)} disabled={isSyncing}
+                        style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '5px', cursor: isSyncing ? 'not-allowed' : 'pointer', backgroundColor: isSyncing ? '#f3f4f6' : 'white', color: isSyncing ? '#9ca3af' : '#6b7280' }}>
+                        清除已同步
+                      </button>
+                    )}
+                    <button onClick={() => loadServerStats(index, server.url)} disabled={isSyncing}
+                      style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '5px', cursor: isSyncing ? 'not-allowed' : 'pointer', backgroundColor: isSyncing ? '#f3f4f6' : 'white', color: isSyncing ? '#9ca3af' : '#374151' }}>刷新</button>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
-
-        {/* Sync Status Card (only in online mode with data) */}
-        {!config.offlineMode && cacheTotal.total > 0 && (
-          <div style={{ padding: '14px 16px', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: 'white' }}>
-            <div style={{ fontWeight: 500, fontSize: '14px', marginBottom: '8px' }}>📊 数据同步状态</div>
-            <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: '#374151', marginBottom: '12px', flexWrap: 'wrap' }}>
-              <span>总计: <strong>{cacheTotal.total}</strong></span>
-              <span style={{ color: cacheTotal.pending > 0 ? '#d97706' : '#16a34a' }}>
-                待同步: <strong>{cacheTotal.pending}</strong>
-              </span>
-              <span style={{ color: '#16a34a' }}>
-                已同步: <strong>{cacheTotal.synced}</strong>
-              </span>
-              {cacheTotal.failed > 0 && (
-                <span style={{ color: '#dc2626' }}>
-                  失败: <strong>{cacheTotal.failed}</strong>
-                </span>
-              )}
-            </div>
-            
-            {/* Sync Progress Bar */}
-            {(syncProgress || syncResult) && (
-              <div style={{ marginBottom: '12px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                {syncProgress && !syncResult && (
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
-                      <span>同步进度</span>
-                      <span>{syncProgress.current}/{syncProgress.total} ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)</span>
-                    </div>
-                    <div style={{ width: '100%', height: '8px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
-                      <div
-                        style={{
-                          width: `${(syncProgress.current / syncProgress.total) * 100}%`,
-                          height: '100%',
-                          backgroundColor: '#2563eb',
-                          transition: 'width 0.3s ease',
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#64748b' }}>
-                      <span>成功: <strong style={{ color: '#16a34a' }}>{syncProgress.success}</strong></span>
-                      {syncProgress.failed > 0 && (
-                        <span>失败: <strong style={{ color: '#dc2626' }}>{syncProgress.failed}</strong></span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {syncResult && (
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: syncResult.failed > 0 ? '#d97706' : '#16a34a' }}>
-                      {syncResult.failed > 0 ? '⚠️ 同步完成（部分失败）' : '✅ 同步完成'}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
-                      成功: <strong style={{ color: '#16a34a' }}>{syncResult.success}</strong>
-                      {syncResult.failed > 0 && (
-                        <span> | 失败: <strong style={{ color: '#dc2626' }}>{syncResult.failed}</strong></span>
-                      )}
-                    </div>
-                    {syncResult.errors && syncResult.errors.length > 0 && (
-                      <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fef2f2', borderRadius: '4px', border: '1px solid #fecaca' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 500, color: '#dc2626', marginBottom: '4px' }}>失败原因：</div>
-                        {syncResult.errors.slice(0, 5).map((error, idx) => (
-                          <div key={idx} style={{ fontSize: '11px', color: '#991b1b', marginBottom: '2px', fontFamily: 'monospace' }}>
-                            • {error}
-                          </div>
-                        ))}
-                        {syncResult.errors.length > 5 && (
-                          <div style={{ fontSize: '11px', color: '#991b1b', marginTop: '4px' }}>
-                            ... 还有 {syncResult.errors.length - 5} 个错误
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => {
-                          setSyncProgress(null)
-                          setSyncResult(null)
-                          loadCacheStats()
-                        }}
-                        style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}
-                      >
-                        关闭
-                      </button>
-                      {syncResult.failed > 0 && (
-                        <button
-                          onClick={handleRetryFailed}
-                          style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #fde68a', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}
-                        >
-                          重试失败项
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                onClick={handleSyncNow}
-                disabled={syncing || cacheTotal.pending === 0}
-                style={{
-                  padding: '6px 14px', fontSize: '13px', border: 'none', borderRadius: '6px',
-                  cursor: syncing || cacheTotal.pending === 0 ? 'not-allowed' : 'pointer',
-                  backgroundColor: cacheTotal.pending === 0 ? '#cbd5e1' : '#2563eb',
-                  color: 'white', fontWeight: 500,
-                }}
-              >
-                {syncing ? '同步中...' : '立即同步'}
-              </button>
-              {syncing && (
-                <button
-                  onClick={async () => {
-                    await chrome.runtime.sendMessage({ type: 'CANCEL_SYNC' })
-                    setSyncing(false)
-                    setSyncProgress(null)
-                    setSyncResult(null)
-                    setMessage('已取消同步')
-                    setTimeout(() => setMessage(''), 3000)
-                    setTimeout(loadCacheStats, 1000)
-                  }}
-                  style={{
-                    padding: '6px 14px', fontSize: '13px', border: '1px solid #fecaca', borderRadius: '6px',
-                    cursor: 'pointer', backgroundColor: '#fef2f2', color: '#dc2626',
-                  }}
-                >
-                  取消同步
-                </button>
-              )}
-              {cacheTotal.failed > 0 && (
-                <button
-                  onClick={handleRetryFailed}
-                  disabled={syncing}
-                  style={{
-                    padding: '6px 14px', fontSize: '13px', border: '1px solid #fde68a', borderRadius: '6px',
-                    cursor: syncing ? 'not-allowed' : 'pointer',
-                    backgroundColor: syncing ? '#f3f4f6' : '#fffbeb', color: syncing ? '#9ca3af' : '#d97706'
-                  }}
-                >
-                  重试失败 ({cacheTotal.failed})
-                </button>
-              )}
-              {cacheTotal.synced > 0 && (
-                <button
-                  onClick={handleClearSynced}
-                  disabled={syncing}
-                  style={{
-                    padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px',
-                    cursor: syncing ? 'not-allowed' : 'pointer',
-                    backgroundColor: syncing ? '#f3f4f6' : 'white', color: syncing ? '#9ca3af' : '#6b7280'
-                  }}
-                >
-                  清除已同步
-                </button>
-              )}
-              <button
-                onClick={loadCacheStats}
-                disabled={syncing}
-                style={{
-                  padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px',
-                  cursor: syncing ? 'not-allowed' : 'pointer',
-                  backgroundColor: syncing ? '#f3f4f6' : 'white', color: syncing ? '#9ca3af' : '#374151'
-                }}
-              >
-                刷新
-              </button>
-            </div>
-          </div>
-        )}
       </div>
       )}
 
-      {/* Server setup hint: shown when the active server is configured but unreachable */}
+      {/* Server setup hint */}
       {!config.offlineMode && health[config.activeServerIndex || 0]?.server === false && (
         <div style={{ marginTop: '-4px', marginBottom: '16px', padding: '14px 16px', border: '1px solid #fde68a', borderRadius: '8px', backgroundColor: '#fffbeb' }}>
           <div style={{ fontWeight: 500, fontSize: '13px', color: '#92400e', marginBottom: '6px' }}>连接不到服务端？</div>
           <div style={{ fontSize: '12px', color: '#92400e', lineHeight: 1.7 }}>
             <div>1. 从 <a href="https://github.com/cone387/aiinbox/releases/latest" target="_blank" rel="noreferrer" style={{ color: '#b45309', fontWeight: 500 }}>发布页</a> 下载对应平台的服务端程序（单文件，无需安装）。</div>
             <div>2. 双击运行，它会在 <code style={{ background: '#fef3c7', padding: '0 4px', borderRadius: '3px' }}>http://localhost:9531</code> 启动并自带网页界面。</div>
-            <div>3. 把上方服务地址填为该地址，点“刷新”确认连通后再“授权登录”。</div>
-            <div style={{ marginTop: '4px', color: '#a16207' }}>或开启上方“离线模式”，仅本地捕获、随时导出，无需任何服务端。</div>
+            <div>3. 把上方服务地址填为该地址，点"刷新"确认连通后再"授权登录"。</div>
+            <div style={{ marginTop: '4px', color: '#a16207' }}>或开启上方"离线模式"，仅本地捕获、随时导出，无需任何服务端。</div>
           </div>
         </div>
       )}
+
       <div style={{ marginTop: '28px' }}>
         <h2 style={{ fontSize: '16px', margin: '0 0 4px' }}>数据导出</h2>
         <p style={{ color: '#666', fontSize: '13px', margin: '0 0 12px' }}>
@@ -632,39 +492,19 @@ function App() {
           )}
           ）。
         </p>
-
         <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px' }}>
-          {/* Platform选择 */}
           <div style={{ fontSize: '13px', color: '#374151', marginBottom: '8px' }}>选择平台</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-            <button
-              onClick={() => setExportPlatform('all')}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px',
-                border: exportPlatform === 'all' ? '1.5px solid #3b82f6' : '1px solid #d1d5db',
-                borderRadius: '6px', cursor: 'pointer',
-                backgroundColor: exportPlatform === 'all' ? '#f8faff' : 'white',
-              }}
-            >
-              全部
-              <span style={{ color: '#94a3b8' }}>{cacheTotal.total}</span>
+            <button onClick={() => setExportPlatform('all')}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px', border: exportPlatform === 'all' ? '1.5px solid #3b82f6' : '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: exportPlatform === 'all' ? '#f8faff' : 'white' }}>
+              全部 <span style={{ color: '#94a3b8' }}>{cacheTotal.total}</span>
             </button>
             {PLATFORMS.map((platform) => {
               const c = cacheByPlatform[platform]
               const active = exportPlatform === platform
               return (
-                <button
-                  key={platform}
-                  onClick={() => setExportPlatform(platform)}
-                  disabled={!c || c.total === 0}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px',
-                    border: active ? '1.5px solid #3b82f6' : '1px solid #d1d5db',
-                    borderRadius: '6px', cursor: !c || c.total === 0 ? 'not-allowed' : 'pointer',
-                    backgroundColor: active ? '#f8faff' : 'white',
-                    opacity: !c || c.total === 0 ? 0.45 : 1,
-                  }}
-                >
+                <button key={platform} onClick={() => setExportPlatform(platform)} disabled={!c || c.total === 0}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px', border: active ? '1.5px solid #3b82f6' : '1px solid #d1d5db', borderRadius: '6px', cursor: !c || c.total === 0 ? 'not-allowed' : 'pointer', backgroundColor: active ? '#f8faff' : 'white', opacity: !c || c.total === 0 ? 0.45 : 1 }}>
                   <PlatformIcon platform={platform} size={18} />
                   {platformLabels[platform]}
                   <span style={{ color: config.offlineMode ? '#94a3b8' : (c && c.synced === c.total ? '#16a34a' : '#94a3b8') }}>
@@ -674,48 +514,26 @@ function App() {
               )
             })}
           </div>
-
-          {/* 格式选择 */}
           <div style={{ fontSize: '13px', color: '#374151', marginBottom: '8px' }}>导出格式</div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
             {(['json', 'markdown'] as ExportFormat[]).map((fmt) => (
-              <button
-                key={fmt}
-                onClick={() => setExportFormat(fmt)}
-                style={{
-                  padding: '6px 16px', fontSize: '13px',
-                  border: exportFormat === fmt ? '1.5px solid #3b82f6' : '1px solid #d1d5db',
-                  borderRadius: '6px', cursor: 'pointer',
-                  backgroundColor: exportFormat === fmt ? '#f8faff' : 'white',
-                }}
-              >
+              <button key={fmt} onClick={() => setExportFormat(fmt)}
+                style={{ padding: '6px 16px', fontSize: '13px', border: exportFormat === fmt ? '1.5px solid #3b82f6' : '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: exportFormat === fmt ? '#f8faff' : 'white' }}>
                 {fmt === 'json' ? 'JSON' : 'Markdown'}
               </button>
             ))}
           </div>
-
-          <button
-            onClick={handleExport}
-            disabled={exporting || cacheTotal.total === 0}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              padding: '8px 20px', fontSize: '13px', border: 'none', borderRadius: '6px',
-              cursor: exporting || cacheTotal.total === 0 ? 'not-allowed' : 'pointer',
-              backgroundColor: cacheTotal.total === 0 ? '#cbd5e1' : '#2563eb', color: 'white', fontWeight: 500,
-            }}
-          >
+          <button onClick={handleExport} disabled={exporting || cacheTotal.total === 0}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 20px', fontSize: '13px', border: 'none', borderRadius: '6px', cursor: exporting || cacheTotal.total === 0 ? 'not-allowed' : 'pointer', backgroundColor: cacheTotal.total === 0 ? '#cbd5e1' : '#2563eb', color: 'white', fontWeight: 500 }}>
             <ExportIcon size={14} />
             {exporting ? '导出中...' : '导出数据'}
           </button>
-          <button
-            onClick={loadCacheStats}
-            style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}
-          >
+          <button onClick={reloadAllStats}
+            style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}>
             刷新统计
           </button>
         </div>
       </div>
-
     </div>
   )
 }

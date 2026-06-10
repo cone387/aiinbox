@@ -1,1 +1,1 @@
-\"feat: auto-reset synced data when adding new server or switching active server\"  
+\"feat: per-server sync tracking with syncServers field\"  

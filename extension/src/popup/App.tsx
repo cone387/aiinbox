@@ -118,7 +118,9 @@ function App() {
 
   async function loadCacheStats() {
     try {
-      const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
+      const cfg = configRef.current
+      const serverUrl = cfg.servers?.[cfg.activeServerIndex || 0]?.url
+      const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS', serverUrl })
       if (stats && typeof stats.total === 'number') {
         setState((s) => ({ ...s, cacheStats: stats }))
       }
