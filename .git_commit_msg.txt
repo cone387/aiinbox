@@ -1,1 +1,1 @@
-\"feat: concurrent sync - 3x faster with batch upload\"  
+\"fix: restore config.yaml to release-ready defaults\"  
