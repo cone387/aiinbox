@@ -98,13 +98,22 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
-	// CORS - Allow all origins for self-hosted app
-	// Security is handled by API token authentication
-	r.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
-		AllowMethods:     cfg.CORS.AllowedMethods,
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-	}))
+	// CORS whitelist from config (cors.allowed_origins, which always has a
+	// default). AllowWildcard/AllowBrowserExtensions let entries like
+	// "chrome-extension://*" match the extension's origin. Only if the list is
+	// explicitly emptied do we fall back to allowing all origins.
+	corsCfg := cors.Config{
+		AllowMethods:           cfg.CORS.AllowedMethods,
+		AllowHeaders:           []string{"Origin", "Content-Type", "Authorization"},
+		AllowWildcard:          true,
+		AllowBrowserExtensions: true,
+	}
+	if len(cfg.CORS.AllowedOrigins) > 0 {
+		corsCfg.AllowOrigins = cfg.CORS.AllowedOrigins
+	} else {
+		corsCfg.AllowAllOrigins = true
+	}
+	r.Use(cors.New(corsCfg))
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {

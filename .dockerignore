@@ -1,0 +1,14 @@
+# Keep the build context small and avoid copying host-built artifacts into the
+# image (they bloat layers and can be arch-mismatched).
+**/node_modules
+**/dist
+bin/
+.git/
+test-data/
+*.mjs
+docs/
+.kiro/
+.github/
+data/
+backend/internal/webui/dist/*
+!backend/internal/webui/dist/index.html

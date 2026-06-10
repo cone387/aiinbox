@@ -45,7 +45,7 @@ export type ExtensionStatus = 'active' | 'paused' | 'error'
 // Official hosted service. Empty until the official deployment is live; once set,
 // fresh installs connect here by default. Self-hosting and local detection both
 // keep working regardless of this value.
-export const OFFICIAL_SERVICE_URL = ''
+export const OFFICIAL_SERVICE_URL = 'https://aiinbox.cone387.top'
 
 // Conventional address of a self-hosted server running on the user's machine.
 // The popup probes this and offers a one-click connect when it's reachable.
