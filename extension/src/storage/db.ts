@@ -202,6 +202,31 @@ export async function resetFailedAttempts(): Promise<number> {
   })
 }
 
+export async function resetSyncedToPending(): Promise<number> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const index = store.index('syncStatus')
+    let resetCount = 0
+
+    const request = index.openCursor(IDBKeyRange.only('synced'))
+    request.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result
+      if (cursor) {
+        const conv = cursor.value
+        conv.syncStatus = 'pending'
+        conv.syncAttempts = 0
+        store.put(conv)
+        resetCount++
+        cursor.continue()
+      }
+    }
+    tx.oncomplete = () => resolve(resetCount)
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 export async function getAllConversations(): Promise<CachedConversation[]> {
   const db = await openDB()
   return new Promise((resolve, reject) => {

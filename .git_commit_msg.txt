@@ -1,1 +1,1 @@
-fix: remove unused requestId variable in gemini adapter  
+\"feat: auto-reset synced data when adding new server or switching active server\"  

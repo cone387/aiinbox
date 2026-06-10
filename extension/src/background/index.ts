@@ -1,6 +1,6 @@
 import { getAdapterByPlatform } from '../adapters'
 import { ExtensionConfig, Platform, DEFAULT_CONFIG, LOCAL_SERVICE_URL } from '../types'
-import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, resetFailedAttempts, getAllConversations, CachedConversation } from '../storage/db'
+import { saveConversation, getPending, markSynced, markFailed, getStats, getStatsByPlatform, clearSynced, resetFailedAttempts, resetSyncedToPending, getAllConversations, CachedConversation } from '../storage/db'
 import { exportAsJSON, exportAsMarkdown } from '../storage/export'
 
 // Platform URL detection patterns
@@ -445,8 +445,13 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       }
 
       case 'SAVE_CONFIG': {
+        const prevConfig = { ...config }
+        const prevServerCount = prevConfig.servers?.length || 0
+        const prevActiveIndex = prevConfig.activeServerIndex
+        
         config = message.config as ExtensionConfig
         await chrome.storage.local.set({ config })
+        
         const server = config.servers?.[config.activeServerIndex]
         const canCollect = config.offlineMode || !!(server?.url && server?.token)
         // Reconcile the in-memory collecting flag against the new config.
@@ -456,6 +461,23 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           isCollecting = false
           updateIcon('paused')
         }
+        
+        // Detect if a new server was added or active server changed
+        const newServerCount = config.servers?.length || 0
+        const activeChanged = prevActiveIndex !== config.activeServerIndex
+        const serverAdded = newServerCount > prevServerCount
+        
+        if ((serverAdded || activeChanged) && !config.offlineMode) {
+          // Reset synced conversations to pending so they sync to the new server
+          resetSyncedToPending().then(count => {
+            if (count > 0) {
+              console.log(`[AI Inbox] Reset ${count} synced conversations to pending (new server or server switch)`)
+            }
+          }).catch(err => {
+            console.error('[AI Inbox] Failed to reset synced:', err)
+          })
+        }
+        
         if (!config.offlineMode && server?.url && server?.token) {
           startHealthCheck()
           startSyncAlarm()
