@@ -121,8 +121,10 @@ func Load(configPath string) (*Config, error) {
 		v.AddConfigPath("$HOME/.aiinbox")
 	}
 
-	// Environment variable override (prefix AIINBOX_)
+	// Environment variable override (prefix AIINBOX_). The replacer maps nested
+	// config keys to env var names, e.g. server.host -> AIINBOX_SERVER_HOST.
 	v.SetEnvPrefix("AIINBOX")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
 	if err := v.ReadInConfig(); err != nil {
