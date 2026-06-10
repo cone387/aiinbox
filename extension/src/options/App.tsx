@@ -41,6 +41,27 @@ function App() {
     }
   }
 
+  // Load persisted sync states from background
+  async function loadPersistedSyncStates(cfg: ExtensionConfig) {
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'GET_SYNC_STATES' })
+      if (!resp?.states) return
+      const states = resp.states as Record<string, { progress: any; result: any; updatedAt: string }>
+      if (!cfg.servers) return
+      for (let i = 0; i < cfg.servers.length; i++) {
+        const serverUrl = cfg.servers[i]?.url
+        if (!serverUrl || !states[serverUrl]) continue
+        const state = states[serverUrl]
+        if (state.progress) {
+          setSyncProgress(prev => ({ ...prev, [i]: state.progress }))
+        }
+        if (state.result) {
+          setSyncResult(prev => ({ ...prev, [i]: state.result }))
+        }
+      }
+    } catch {}
+  }
+
   useEffect(() => {
     loadConfig().then((cfg) => {
       if (cfg) {
@@ -54,6 +75,8 @@ function App() {
         if (!hasValidServer && !cfg.offlineMode) {
           setShowGuide(true)
         }
+        // Load persisted sync states
+        loadPersistedSyncStates(cfg)
       }
     })
     loadGlobalStatistics()
@@ -133,6 +156,18 @@ function App() {
     setExporting(false)
   }
 
+  // Clear persisted sync state for a specific server
+  async function clearPersistedSyncState(serverUrl: string) {
+    try {
+      const stored = await chrome.storage.local.get('syncStates')
+      const states = (stored.syncStates || {}) as Record<string, any>
+      if (states[serverUrl]) {
+        delete states[serverUrl]
+        await chrome.storage.local.set({ syncStates: states })
+      }
+    } catch {}
+  }
+
   function handleSyncNow(index: number) {
     const serverUrl = config.servers?.[index]?.url
     if (!serverUrl) return
@@ -140,6 +175,8 @@ function App() {
     setSyncingServer(index)
     setSyncProgress(prev => ({ ...prev, [index]: { current: 0, total: stats.pending, success: 0, failed: 0 } }))
     setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next })
+    // Clear persisted state for this server (new sync will re-persist)
+    clearPersistedSyncState(serverUrl)
 
     const listener = (msg: any) => {
       if (msg.type === 'SYNC_PROGRESS') {
@@ -444,7 +481,7 @@ function App() {
                             </div>
                           )}
                           <div style={{ display: 'flex', gap: '6px' }}>
-                            <button onClick={() => { setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next }); setSyncProgress(prev => { const next = { ...prev }; delete next[index]; return next }); reloadAllStats() }}
+                            <button onClick={() => { setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next }); setSyncProgress(prev => { const next = { ...prev }; delete next[index]; return next }); clearPersistedSyncState(server.url || ''); reloadAllStats() }}
                               style={{ padding: '3px 10px', fontSize: '11px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}>关闭</button>
                             {sr.failed > 0 && (
                               <button onClick={() => handleRetryFailed(index)} style={{ padding: '3px 10px', fontSize: '11px', border: '1px solid #fde68a', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#fffbeb', color: '#d97706' }}>重试失败项</button>
@@ -461,7 +498,7 @@ function App() {
                       {isSyncing ? '同步中...' : '立即同步'}
                     </button>
                     {isSyncing && (
-                      <button onClick={async () => { await chrome.runtime.sendMessage({ type: 'CANCEL_SYNC' }); setSyncingServer(null); setSyncProgress(prev => { const next = { ...prev }; delete next[index]; return next }); setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next }); setMessage('已取消同步'); setTimeout(() => setMessage(''), 3000); setTimeout(reloadAllStats, 1000) }}
+                      <button onClick={async () => { await chrome.runtime.sendMessage({ type: 'CANCEL_SYNC' }); setSyncingServer(null); setSyncProgress(prev => { const next = { ...prev }; delete next[index]; return next }); setSyncResult(prev => { const next = { ...prev }; delete next[index]; return next }); clearPersistedSyncState(server.url || ''); setMessage('已取消同步'); setTimeout(() => setMessage(''), 3000); setTimeout(reloadAllStats, 1000) }}
                         style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #fecaca', borderRadius: '5px', cursor: 'pointer', backgroundColor: '#fef2f2', color: '#dc2626' }}>取消</button>
                     )}
                     {ss.failed > 0 && (

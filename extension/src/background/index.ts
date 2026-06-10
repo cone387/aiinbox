@@ -629,6 +629,13 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         break
       }
 
+      case 'GET_SYNC_STATES': {
+        // Return persisted sync states for all servers
+        const stored = await chrome.storage.local.get('syncStates')
+        sendResponse({ states: stored.syncStates || {} })
+        break
+      }
+
       case 'RETRY_FAILED': {
         // Reset failed attempts for the specified server and retry
         const serverUrl = (message.serverUrl as string) || config.servers?.[config.activeServerIndex]?.url
@@ -991,14 +998,21 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
   let processedCount = 0
   const errors: string[] = []
   
+  // Helper to persist sync state to storage
+  async function persistSyncState(serverUrl: string, progress: { current: number; total: number; success: number; failed: number } | null, result: { success: number; failed: number; errors: string[] } | null) {
+    try {
+      const stored = await chrome.storage.local.get('syncStates')
+      const states = (stored.syncStates || {}) as Record<string, { progress: any; result: any; updatedAt: string }>
+      states[serverUrl] = { progress, result, updatedAt: new Date().toISOString() }
+      await chrome.storage.local.set({ syncStates: states })
+    } catch {}
+  }
+
   // Broadcast sync start
-  chrome.runtime.sendMessage({
-    type: 'SYNC_PROGRESS',
-    current: 0,
-    total: pending.length,
-    success: 0,
-    failed: 0,
-  }).catch(() => {})
+  // Persist progress to storage
+  const progressData = { current: 0, total: pending.length, success: 0, failed: 0 }
+  chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', ...progressData }).catch(() => {})
+  persistSyncState(server.url, progressData, null)
   
   // Process in batches of SYNC_CONCURRENCY
   for (let batchStart = 0; batchStart < pending.length; batchStart += SYNC_CONCURRENCY) {
@@ -1044,14 +1058,13 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
       }
     }
     
-    // Broadcast progress
+    // Broadcast progress + persist
+    const progressUpdate = { current: processedCount, total: pending.length, success: successCount, failed: failCount }
     chrome.runtime.sendMessage({
       type: 'SYNC_PROGRESS',
-      current: processedCount,
-      total: pending.length,
-      success: successCount,
-      failed: failCount,
+      ...progressUpdate,
     }).catch(() => {})
+    persistSyncState(server.url, progressUpdate, null)
     
     // Small delay between batches
     if (batchStart + SYNC_CONCURRENCY < pending.length && !syncCancelled) {
@@ -1066,13 +1079,13 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
   lastSyncTime = new Date().toISOString()
   console.log(`[AI Inbox] Sync completed: ${successCount} success, ${failCount} failed`)
   
-  // Broadcast sync completion with results
+  // Broadcast sync completion with results + persist
+  const resultData = { success: successCount, failed: failCount, errors: errors.slice(0, 10) }
   chrome.runtime.sendMessage({
     type: 'SYNC_COMPLETE',
-    success: successCount,
-    failed: failCount,
-    errors: errors.slice(0, 10), // Limit to 10 errors
+    ...resultData,
   }).catch(() => {})
+  persistSyncState(server.url, null, resultData)
 }
 
 // Set up sync alarm

@@ -1,1 +1,1 @@
-fix: sync uses specified server URL instead of always active server  
+feat: persist sync progress to chrome.storage for page refresh recovery  
