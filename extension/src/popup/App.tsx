@@ -253,6 +253,7 @@ function App() {
   const activeServer = state.config.servers?.[state.config.activeServerIndex || 0]
   const enabledPlatforms = state.config.enabledPlatforms || []
   const offlineMode = state.config.offlineMode
+  const hasAuthorizedServer = state.config.servers?.some(s => s.url && s.token) || false
 
   return (
     <div style={{ width: '340px', padding: '12px', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '13px' }}>
@@ -290,8 +291,8 @@ function App() {
         </div>
       </div>
 
-      {/* Local server detected: offer one-click connect (user-confirmed) */}
-      {!offlineMode && state.localDetect.available && !state.localDetect.alreadyActive && !state.localDismissed && (
+      {/* Local server detected: offer one-click connect (only if no server is authorized) */}
+      {!offlineMode && !hasAuthorizedServer && state.localDetect.available && !state.localDetect.alreadyActive && !state.localDismissed && (
         <div style={{ padding: '10px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', marginBottom: '10px' }}>
           <div style={{ fontSize: '12px', color: '#1e40af', fontWeight: 500, marginBottom: '2px' }}>发现本地服务</div>
           <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>

@@ -1,1 +1,1 @@
-UI: move clear synced cache to data export section, remove subtitle  
+UI: add cache size display, hide local service prompt when any server authorized  

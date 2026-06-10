@@ -26,6 +26,20 @@ function App() {
   const [syncProgress, setSyncProgress] = useState<Record<number, { current: number; total: number; success: number; failed: number }>>({})
   const [syncResult, setSyncResult] = useState<Record<number, { success: number; failed: number; errors: string[] }>>({})
   const [showGuide, setShowGuide] = useState(false)
+  const [cacheSize, setCacheSize] = useState<string>('')
+
+  async function estimateCacheSize() {
+    try {
+      const estimate = await navigator.storage.estimate()
+      const usage = estimate.usage || 0
+      // Format size
+      if (usage < 1024) setCacheSize(`${usage} B`)
+      else if (usage < 1024 * 1024) setCacheSize(`${(usage / 1024).toFixed(1)} KB`)
+      else setCacheSize(`${(usage / 1024 / 1024).toFixed(1)} MB`)
+    } catch {
+      setCacheSize('')
+    }
+  }
 
   useEffect(() => {
     loadConfig().then((cfg) => {
@@ -43,6 +57,7 @@ function App() {
       }
     })
     loadGlobalStatistics()
+    estimateCacheSize()
   }, [])
 
   async function loadGlobalStatistics() {
@@ -86,6 +101,7 @@ function App() {
 
   function reloadAllStats() {
     loadGlobalStatistics()
+    estimateCacheSize()
     config.servers?.forEach((s, i) => {
       if (s.url) loadServerStats(i, s.url, s.token)
     })
@@ -547,6 +563,9 @@ function App() {
               style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#6b7280' }}>
               清除已同步缓存
             </button>
+          )}
+          {cacheSize && (
+            <span style={{ marginLeft: '8px', fontSize: '12px', color: '#94a3b8' }}>缓存大小: {cacheSize}</span>
           )}
         </div>
       </div>
