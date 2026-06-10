@@ -42,7 +42,7 @@ function App() {
     }
   }
 
-  // Load persisted sync states from background and set up global listener
+  // Load persisted sync states from background
   async function loadPersistedSyncStates(cfg: ExtensionConfig) {
     try {
       const resp = await chrome.runtime.sendMessage({ type: 'GET_SYNC_STATES' })
@@ -54,18 +54,14 @@ function App() {
         const serverUrl = cfg.servers[i]?.url
         if (!serverUrl || !states[serverUrl]) continue
         const state = states[serverUrl]
-        if (state.progress) {
+        // Only load progress (for progress bar), not result (to avoid stale data)
+        if (state.progress && !state.result) {
           setSyncProgress(prev => ({ ...prev, [i]: state.progress }))
-          // If there's progress but no result, sync is still running
-          if (!state.result) hasActiveSync = true
-        }
-        if (state.result) {
-          setSyncResult(prev => ({ ...prev, [i]: state.result }))
+          hasActiveSync = true
         }
       }
       // If any sync is still active, set syncingServer to show progress
       if (hasActiveSync) {
-        // Find the first server with active sync
         for (let i = 0; i < cfg.servers.length; i++) {
           const serverUrl = cfg.servers[i]?.url
           if (serverUrl && states[serverUrl]?.progress && !states[serverUrl]?.result) {
@@ -74,8 +70,8 @@ function App() {
           }
         }
       }
-      // Set up global listener for SYNC_PROGRESS and SYNC_COMPLETE
-      // (called once per page load, not inside loadPersistedSyncStates)
+      // Clear persisted state after loading (avoid stale data on next load)
+      chrome.storage.local.remove('syncStates')
     } catch {}
   }
 
