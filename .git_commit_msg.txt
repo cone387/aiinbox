@@ -1,1 +1,1 @@
-\"fix: restore config.yaml to release-ready defaults\"  
+fix: remove unused requestId variable in gemini adapter  

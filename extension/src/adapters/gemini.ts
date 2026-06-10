@@ -69,16 +69,13 @@ export class GeminiAdapter extends PlatformAdapter {
     // Find the last chunk that has a messages array at index 4
     let assistantText = ''
     let convId = ''
-    let requestId = ''
 
     for (let i = chunks.length - 1; i >= 0; i--) {
       const c = chunks[i]
-      // Extract conv/request IDs from c[1]
+      // Extract conv ID from c[1]
       if (Array.isArray(c[1])) {
         const rawConvId = c[1][0]
-        const rawReqId = c[1][1]
         if (typeof rawConvId === 'string') convId = rawConvId.replace(/^c_/, '')
-        if (typeof rawReqId === 'string') requestId = rawReqId.replace(/^r_/, '')
       }
       // Extract text from c[4][0][1]
       if (Array.isArray(c[4]) && c[4].length > 0) {
