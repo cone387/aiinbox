@@ -108,13 +108,13 @@ async function loadConfig(): Promise<void> {
     // Server-dependent alarms only make sense when connected to a server.
     if (!config.offlineMode && server?.url && server?.token) {
       startHealthCheck()
-      startSyncAlarm()
     }
   } catch (err) {
     console.error('[AI Inbox] Failed to load config:', err)
   }
 }
 
+// Set up health check alarm only (sync is manual)
 function startHealthCheck(): void {
   chrome.alarms.clear('health-check')
   chrome.alarms.create('health-check', { periodInMinutes: 1 })
@@ -153,9 +153,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       checkServerHealth(server.url, server.token)
     }
   }
-  if (alarm.name === 'sync-pending') {
-    syncPendingConversations()
-  }
+
 })
 
 async function checkServerHealth(url: string, token?: string): Promise<{ server: boolean; auth: boolean }> {
@@ -185,14 +183,6 @@ async function checkServerHealth(url: string, token?: string): Promise<{ server:
   }
 
   cachedHealth = { server: serverOk, auth: authOk }
-
-  // Only trigger sync if this health check matches the current active server
-  if (serverOk && authOk) {
-    const activeServer = config.servers?.[config.activeServerIndex]
-    if (activeServer?.url === url && activeServer?.token) {
-      syncPendingConversations()
-    }
-  }
 
   return cachedHealth
 }
@@ -486,13 +476,6 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         
         if (!config.offlineMode && server?.url && server?.token) {
           startHealthCheck()
-          startSyncAlarm()
-          // Immediately sync pending data after configuration (1s delay for health check)
-          setTimeout(() => {
-            syncPendingConversations().then(() => {
-              console.log('[AI Inbox] Initial sync completed after config save')
-            })
-          }, 1000)
         }
         sendResponse({ ok: true })
         break
@@ -1145,9 +1128,4 @@ async function syncPendingConversations(targetUrl?: string, targetToken?: string
     ...resultData,
   }).catch(() => {})
   persistSyncState(server.url, null, resultData)
-}
-
-// Set up sync alarm
-function startSyncAlarm(): void {
-  chrome.alarms.create('sync-pending', { periodInMinutes: 2 })
 }
