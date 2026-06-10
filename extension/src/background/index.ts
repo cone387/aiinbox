@@ -530,6 +530,89 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         break
       }
 
+      case 'GET_SERVER_SYNC_STATUS': {
+        // Fetch sync status from the server and compare with local cache
+        const serverUrl = (message.serverUrl as string).replace(/\/$/, '')
+        const token = message.token as string
+        if (!serverUrl || !token) {
+          sendResponse({ ok: false, error: 'no_server' })
+          break
+        }
+
+        try {
+          const resp = await fetch(`${serverUrl}/api/v1/conversations/synced`, {
+            headers: { 'Authorization': 'Bearer ' + token },
+            signal: AbortSignal.timeout(10000),
+          })
+          if (!resp.ok) {
+            sendResponse({ ok: false, error: `HTTP ${resp.status}` })
+            break
+          }
+
+          const data = await resp.json()
+          const serverPlatforms = data.platforms || {}
+
+          // Get all local conversations
+          const localConvs = await getAllConversations()
+
+          // Build local set by platform
+          const localByPlatform: Record<string, Set<string>> = {}
+          const localFailedByPlatform: Record<string, number> = {}
+          for (const conv of localConvs) {
+            if (!localByPlatform[conv.platform]) localByPlatform[conv.platform] = new Set()
+            localByPlatform[conv.platform].add(conv.conversationId)
+            if (conv.syncStatus === 'failed') {
+              localFailedByPlatform[conv.platform] = (localFailedByPlatform[conv.platform] || 0) + 1
+            }
+          }
+
+          // Build comparison: per platform
+          const platforms: Record<string, { total: number; synced: number; pending: number; failed: number }> = {}
+          let totalLocal = 0
+          let totalSynced = 0
+          let totalPending = 0
+          let totalFailed = 0
+
+          // All platforms from local
+          const allPlatforms = new Set([...Object.keys(localByPlatform), ...Object.keys(serverPlatforms)])
+          for (const plat of allPlatforms) {
+            const localIds = localByPlatform[plat] || new Set()
+            const serverItems = serverPlatforms[plat]?.items || []
+            const serverIds = new Set(serverItems.map((item: any) => item.conversation_id))
+
+            // Pending = in local but not in server
+            let pending = 0
+            for (const id of localIds) {
+              if (!serverIds.has(id)) pending++
+            }
+
+            const synced = serverIds.size
+            const failed = localFailedByPlatform[plat] || 0
+            const total = localIds.size
+
+            platforms[plat] = { total, synced, pending, failed }
+            totalLocal += total
+            totalSynced += synced
+            totalPending += pending
+            totalFailed += failed
+          }
+
+          sendResponse({
+            ok: true,
+            serverTotal: data.total || 0,
+            total: totalLocal,
+            synced: totalSynced,
+            pending: totalPending,
+            failed: totalFailed,
+            platforms,
+            lastSyncTime,
+          })
+        } catch (err) {
+          sendResponse({ ok: false, error: String(err) })
+        }
+        break
+      }
+
       case 'EXPORT_DATA': {
         const format = message.format === 'markdown' ? 'markdown' : 'json'
         const data = format === 'markdown'

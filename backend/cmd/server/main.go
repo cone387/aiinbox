@@ -165,6 +165,7 @@ func main() {
 
 		// Query routes
 		protected.GET("/conversations", convHandler.ListConversations)
+		protected.GET("/conversations/synced", convHandler.GetSyncedConversations)
 		protected.GET("/conversations/:id", convHandler.GetConversation)
 		protected.GET("/conversations/:id/messages", convHandler.GetMessages)
 		protected.POST("/conversations/:id/read", convHandler.MarkRead)

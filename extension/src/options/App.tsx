@@ -33,7 +33,7 @@ function App() {
         cfg.servers?.forEach((_, i) => checkHealth(i, cfg))
         // Load stats for each server
         cfg.servers?.forEach((s, i) => {
-          if (s.url) loadServerStats(i, s.url)
+          if (s.url) loadServerStats(i, s.url, s.token)
         })
         // Show guide if no server is configured or not authorized
         const hasValidServer = cfg.servers?.some(s => s.url && s.token)
@@ -55,11 +55,31 @@ function App() {
     } catch {}
   }
 
-  async function loadServerStats(index: number, serverUrl: string) {
+  async function loadServerStats(index: number, serverUrl: string, token?: string) {
+    if (!token) {
+      // No token, fall back to local-only stats
+      try {
+        const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
+        if (stats && typeof stats.total === 'number') {
+          setServerStats(prev => ({ ...prev, [index]: { total: stats.total, pending: stats.pending, synced: stats.synced, failed: stats.failed } }))
+        }
+      } catch {}
+      return
+    }
     try {
-      const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS', serverUrl })
-      if (stats && typeof stats.total === 'number') {
-        setServerStats(prev => ({ ...prev, [index]: { total: stats.total, pending: stats.pending, synced: stats.synced, failed: stats.failed } }))
+      const resp = await chrome.runtime.sendMessage({
+        type: 'GET_SERVER_SYNC_STATUS',
+        serverUrl,
+        token,
+      })
+      if (resp?.ok) {
+        setServerStats(prev => ({ ...prev, [index]: { total: resp.total, pending: resp.pending, synced: resp.synced, failed: resp.failed } }))
+      } else {
+        // Server unreachable, fall back to local stats
+        const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
+        if (stats && typeof stats.total === 'number') {
+          setServerStats(prev => ({ ...prev, [index]: { total: stats.total, pending: stats.total, synced: 0, failed: stats.failed || 0 } }))
+        }
       }
     } catch {}
   }
@@ -67,7 +87,7 @@ function App() {
   function reloadAllStats() {
     loadGlobalStatistics()
     config.servers?.forEach((s, i) => {
-      if (s.url) loadServerStats(i, s.url)
+      if (s.url) loadServerStats(i, s.url, s.token)
     })
   }
 
@@ -230,8 +250,8 @@ function App() {
   function saveServerUrl(index: number) {
     persist(config)
     checkHealth(index)
-    const serverUrl = config.servers?.[index]?.url
-    if (serverUrl) loadServerStats(index, serverUrl)
+    const server = config.servers?.[index]
+    if (server?.url) loadServerStats(index, server.url, server.token)
   }
 
   function setActiveServer(index: number) {
@@ -454,7 +474,7 @@ function App() {
                         清除已同步
                       </button>
                     )}
-                    <button onClick={() => loadServerStats(index, server.url)} disabled={isSyncing}
+                    <button onClick={() => loadServerStats(index, server.url, server.token)} disabled={isSyncing}
                       style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '5px', cursor: isSyncing ? 'not-allowed' : 'pointer', backgroundColor: isSyncing ? '#f3f4f6' : 'white', color: isSyncing ? '#9ca3af' : '#374151' }}>刷新</button>
                   </div>
                 </div>

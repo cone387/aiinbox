@@ -225,6 +225,57 @@ func (h *ConversationHandler) MarkRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// GetSyncedConversations returns a lightweight summary of all synced conversations,
+// grouped by platform, for the client to compare with local cache.
+// Response: { platforms: { chatgpt: { total: 42, items: [...] }, ... }, total: 42 }
+func (h *ConversationHandler) GetSyncedConversations(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	type ConvSummary struct {
+		ConversationID string    `json:"conversation_id"`
+		MessageCount   int       `json:"message_count"`
+		UpdatedAt      time.Time `json:"updated_at"`
+	}
+
+	type PlatformGroup struct {
+		Total int           `json:"total"`
+		Items []ConvSummary `json:"items"`
+	}
+
+	// Fetch all conversations with lightweight fields only
+	var conversations []struct {
+		Platform       string
+		ConversationID string
+		MessageCount   int
+		UpdatedAt      time.Time
+	}
+	h.DB.Model(&models.Conversation{}).
+		Select("platform, conversation_id, message_count, updated_at").
+		Where("user_id = ?", userID).
+		Find(&conversations)
+
+	// Group by platform
+	platforms := make(map[string]*PlatformGroup)
+	for _, conv := range conversations {
+		group, ok := platforms[conv.Platform]
+		if !ok {
+			group = &PlatformGroup{Items: []ConvSummary{}}
+			platforms[conv.Platform] = group
+		}
+		group.Items = append(group.Items, ConvSummary{
+			ConversationID: conv.ConversationID,
+			MessageCount:   conv.MessageCount,
+			UpdatedAt:      conv.UpdatedAt,
+		})
+		group.Total++
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"platforms": platforms,
+		"total":     len(conversations),
+	})
+}
+
 // MarkAllRead marks all unread conversations as read, optionally scoped to a platform.
 func (h *ConversationHandler) MarkAllRead(c *gin.Context) {
 	userID := middleware.GetUserID(c)

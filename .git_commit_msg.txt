@@ -1,1 +1,1 @@
-fix: migration only inherits sync status for active server, new servers start as pending  
+feat: server-side sync status API for accurate per-server comparison  
