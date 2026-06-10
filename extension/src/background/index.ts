@@ -636,9 +636,12 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           sendResponse({ ok: false, error: 'no_server_url' })
           break
         }
+        // Find the token for the target server
+        const targetServer = config.servers?.find(s => s.url === serverUrl)
+        const targetToken = targetServer?.token
         resetFailedAttempts(serverUrl).then(count => {
           console.log(`[AI Inbox] Reset ${count} failed conversations to pending for ${serverUrl}`)
-          syncPendingConversations().catch(err => {
+          syncPendingConversations(serverUrl, targetToken).catch(err => {
             console.error('[AI Inbox] Sync error:', err)
           })
         }).catch(err => {
@@ -803,9 +806,11 @@ function revertBadge(): void {
   }
 }
 
-// Upload a cached conversation to the server
-async function uploadConversation(conv: CachedConversation): Promise<void> {
-  const server = config.servers?.[config.activeServerIndex]
+// Upload a cached conversation to a specific server
+async function uploadConversation(conv: CachedConversation, targetUrl?: string, targetToken?: string): Promise<void> {
+  const server = targetUrl && targetToken
+    ? { url: targetUrl, token: targetToken }
+    : config.servers?.[config.activeServerIndex]
   if (!server?.url || !server?.token) {
     await markFailed(conv.id, server?.url || '', 'no_server_configured')
     throw new Error('no_server_configured')
@@ -904,14 +909,17 @@ let syncCancelled = false
 const SYNC_CONCURRENCY = 3
 const SYNC_BATCH_DELAY = 500  // delay between batches in ms
 
-async function syncPendingConversations(): Promise<void> {
+async function syncPendingConversations(targetUrl?: string, targetToken?: string): Promise<void> {
   syncCancelled = false
   
   if (config.offlineMode) {
     console.log('[AI Inbox] Sync skipped: offline mode')
     return
   }
-  const server = config.servers?.[config.activeServerIndex]
+  // Use specified server or fall back to active server
+  const server = targetUrl && targetToken
+    ? { url: targetUrl, token: targetToken }
+    : config.servers?.[config.activeServerIndex]
   if (!server?.url || !server?.token) {
     console.log('[AI Inbox] Sync skipped: no server configured')
     chrome.runtime.sendMessage({
@@ -922,7 +930,8 @@ async function syncPendingConversations(): Promise<void> {
     }).catch(() => {})
     return
   }
-  if (!cachedHealth.server || !cachedHealth.auth) {
+  // Only check cachedHealth if using the active server
+  if (!targetUrl && (!cachedHealth.server || !cachedHealth.auth)) {
     console.log('[AI Inbox] Sync skipped: server not healthy')
     chrome.runtime.sendMessage({
       type: 'SYNC_COMPLETE',
@@ -1014,7 +1023,7 @@ async function syncPendingConversations(): Promise<void> {
     
     // Upload all conversations in this batch concurrently
     const results = await Promise.allSettled(
-      batch.map(conv => uploadConversation(conv))
+      batch.map(conv => uploadConversation(conv, server.url, server.token))
     )
     
     // Process results
