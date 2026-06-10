@@ -1,1 +1,1 @@
-fix: sync uses server-side comparison instead of client syncServers field  
+fix: GET_SERVER_SYNC_STATUS use intersection count for synced instead of server total  

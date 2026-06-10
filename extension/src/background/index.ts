@@ -585,11 +585,15 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
 
             // Pending = in local but not in server
             let pending = 0
+            let synced = 0
             for (const id of localIds) {
-              if (!serverIds.has(id)) pending++
+              if (serverIds.has(id)) {
+                synced++
+              } else {
+                pending++
+              }
             }
 
-            const synced = serverIds.size
             const failed = localFailedByPlatform[plat] || 0
             const total = localIds.size
 
