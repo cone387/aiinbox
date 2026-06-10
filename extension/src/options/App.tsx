@@ -117,17 +117,6 @@ function App() {
     setExporting(false)
   }
 
-  async function handleClearSynced(index: number) {
-    const serverUrl = config.servers?.[index]?.url
-    if (!serverUrl) return
-    const resp = await chrome.runtime.sendMessage({ type: 'CLEAR_SYNCED', serverUrl })
-    if (resp?.ok) {
-      setMessage(`已清除 ${resp.deleted || 0} 条已同步缓存`)
-      setTimeout(() => setMessage(''), 3000)
-      reloadAllStats()
-    }
-  }
-
   function handleSyncNow(index: number) {
     const serverUrl = config.servers?.[index]?.url
     if (!serverUrl) return
@@ -265,9 +254,6 @@ function App() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <div>
           <h1 style={{ fontSize: '20px', margin: 0 }}>AI Inbox 设置</h1>
-          <p style={{ color: '#666', fontSize: '13px', margin: '4px 0 0' }}>
-            配置服务地址并授权，授权后插件自动连接，无需手动复制 Token。
-          </p>
         </div>
         <button onClick={addServer} style={{ padding: '6px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', whiteSpace: 'nowrap' }}>
           + 添加服务
@@ -468,12 +454,6 @@ function App() {
                         重试失败 ({ss.failed})
                       </button>
                     )}
-                    {ss.synced > 0 && (
-                      <button onClick={() => handleClearSynced(index)} disabled={isSyncing}
-                        style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '5px', cursor: isSyncing ? 'not-allowed' : 'pointer', backgroundColor: isSyncing ? '#f3f4f6' : 'white', color: isSyncing ? '#9ca3af' : '#6b7280' }}>
-                        清除已同步
-                      </button>
-                    )}
                     <button onClick={() => loadServerStats(index, server.url, server.token)} disabled={isSyncing}
                       style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '5px', cursor: isSyncing ? 'not-allowed' : 'pointer', backgroundColor: isSyncing ? '#f3f4f6' : 'white', color: isSyncing ? '#9ca3af' : '#374151' }}>刷新</button>
                   </div>
@@ -552,6 +532,22 @@ function App() {
             style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#374151' }}>
             刷新统计
           </button>
+          {cacheTotal.synced > 0 && (
+            <button onClick={async () => {
+              if (!confirm(`确定清除 ${cacheTotal.synced} 条已同步的本地缓存吗？\n服务端数据不受影响，仅清除本地缓存。`)) return
+              const activeServer = config.servers?.[config.activeServerIndex || 0]
+              if (!activeServer?.url) return
+              const resp = await chrome.runtime.sendMessage({ type: 'CLEAR_SYNCED', serverUrl: activeServer.url })
+              if (resp?.ok) {
+                setMessage(`已清除 ${resp.deleted || 0} 条本地缓存`)
+                setTimeout(() => setMessage(''), 3000)
+                reloadAllStats()
+              }
+            }}
+              style={{ marginLeft: '8px', padding: '8px 14px', fontSize: '13px', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'white', color: '#6b7280' }}>
+              清除已同步缓存
+            </button>
+          )}
         </div>
       </div>
     </div>
