@@ -140,9 +140,9 @@ function App() {
 
   async function loadServerStats(index: number, serverUrl: string, token?: string) {
     if (!token) {
-      // No token, fall back to local-only stats
+      // No token, fall back to local-only stats with per-server filtering
       try {
-        const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
+        const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS', serverUrl })
         if (stats && typeof stats.total === 'number') {
           setServerStats(prev => ({ ...prev, [index]: { total: stats.total, pending: stats.pending, synced: stats.synced, failed: stats.failed } }))
         }
@@ -158,8 +158,8 @@ function App() {
       if (resp?.ok) {
         setServerStats(prev => ({ ...prev, [index]: { total: resp.total, pending: resp.pending, synced: resp.synced, failed: resp.failed } }))
       } else {
-        // Server unreachable, fall back to local stats
-        const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS' })
+        // Server unreachable, fall back to local stats with per-server filtering
+        const stats = await chrome.runtime.sendMessage({ type: 'GET_CACHE_STATS', serverUrl })
         if (stats && typeof stats.total === 'number') {
           setServerStats(prev => ({ ...prev, [index]: { total: stats.total, pending: stats.total, synced: 0, failed: stats.failed || 0 } }))
         }

@@ -1,1 +1,1 @@
-fix: sync progress persists after refresh with global listener and serverUrl in messages  
+fix: per-server stats isolation - remove legacy fallback in getServerSyncStatus and pass serverUrl to GET_CACHE_STATS  

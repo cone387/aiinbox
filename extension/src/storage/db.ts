@@ -169,17 +169,17 @@ async function getByPlatformConvId(platform: Platform, conversationId: string): 
   })
 }
 
-/** Get the sync status for a specific server, falling back to legacy syncStatus */
+/** Get the sync status for a specific server.
+ *  If no per-server entry exists, treat as 'pending' (needs sync to this server).
+ *  Legacy syncStatus is NOT used as fallback because it's global, not per-server. */
 function getServerSyncStatus(conv: CachedConversation, serverUrl: string): ServerSyncStatus {
   if (conv.syncServers?.[serverUrl]) {
     return conv.syncServers[serverUrl]
   }
-  // Fallback to legacy fields for un-migrated data
+  // No per-server entry: this conversation hasn't been synced to this server yet
   return {
-    status: conv.syncStatus || 'pending',
-    attempts: conv.syncAttempts || 0,
-    error: conv.lastSyncError,
-    syncedAt: conv.syncedAt,
+    status: 'pending',
+    attempts: 0,
   }
 }
 
