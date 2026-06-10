@@ -69,9 +69,10 @@ export function openDB(): Promise<IDBDatabase> {
 
 /**
  * Migrate existing conversations to per-server sync tracking.
- * For each conversation that lacks syncServers, creates entries based on legacy syncStatus.
+ * Only the activeServerUrl inherits the legacy syncStatus.
+ * All other servers start as 'pending' so they sync fresh.
  */
-export async function migrateSyncServers(serverUrls: string[]): Promise<number> {
+export async function migrateSyncServers(serverUrls: string[], activeServerUrl: string): Promise<number> {
   if (serverUrls.length === 0) return 0
   const db = await openDB()
   return new Promise((resolve, reject) => {
@@ -87,11 +88,17 @@ export async function migrateSyncServers(serverUrls: string[]): Promise<number> 
         if (!conv.syncServers) {
           conv.syncServers = {}
           for (const url of serverUrls) {
-            conv.syncServers[url] = {
-              status: conv.syncStatus || 'pending',
-              attempts: conv.syncAttempts || 0,
-              error: conv.lastSyncError,
-              syncedAt: conv.syncedAt,
+            if (url === activeServerUrl) {
+              // Active server inherits legacy sync status
+              conv.syncServers[url] = {
+                status: conv.syncStatus || 'pending',
+                attempts: conv.syncAttempts || 0,
+                error: conv.lastSyncError,
+                syncedAt: conv.syncedAt,
+              }
+            } else {
+              // Other servers: pending (need to sync)
+              conv.syncServers[url] = { status: 'pending', attempts: 0 }
             }
           }
           store.put(conv)

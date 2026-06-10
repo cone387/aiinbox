@@ -1,1 +1,1 @@
-\"feat: per-server sync tracking with syncServers field\"  
+fix: migration only inherits sync status for active server, new servers start as pending  

@@ -92,8 +92,9 @@ async function loadConfig(): Promise<void> {
 
     // Migrate per-server sync tracking for all known servers
     const knownUrls = (config.servers || []).map(s => s.url).filter(Boolean)
-    if (knownUrls.length > 0) {
-      migrateSyncServers(knownUrls).catch(err => {
+    const activeUrl = config.servers?.[config.activeServerIndex]?.url || ''
+    if (knownUrls.length > 0 && activeUrl) {
+      migrateSyncServers(knownUrls, activeUrl).catch(err => {
         console.error('[AI Inbox] Migration error:', err)
       })
     }
@@ -455,6 +456,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
 
       case 'SAVE_CONFIG': {
         const prevServerUrls = (config.servers || []).map(s => s.url).filter(Boolean)
+        const prevActiveUrl = config.servers?.[config.activeServerIndex]?.url || ''
         
         config = message.config as ExtensionConfig
         await chrome.storage.local.set({ config })
@@ -473,8 +475,10 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         const newServerUrls = (config.servers || []).map(s => s.url).filter(Boolean)
         const addedUrls = newServerUrls.filter(url => !prevServerUrls.includes(url))
         if (addedUrls.length > 0) {
+          // For newly added servers, pass the OLD active server so legacy status
+          // is only inherited by the old server; new servers start as 'pending'.
           console.log(`[AI Inbox] New servers added: ${addedUrls.join(', ')}`)
-          migrateSyncServers(addedUrls).then(count => {
+          migrateSyncServers(newServerUrls, prevActiveUrl).then(count => {
             if (count > 0) console.log(`[AI Inbox] Migrated ${count} conversations for new servers`)
           }).catch(err => console.error('[AI Inbox] Migration error:', err))
         }
