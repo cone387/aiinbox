@@ -1,1 +1,1 @@
-feat: persist sync progress to chrome.storage for page refresh recovery  
+fix: failed count now uses per-server syncServers status instead of global syncStatus  

@@ -558,13 +558,15 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
           // Get all local conversations
           const localConvs = await getAllConversations()
 
-          // Build local set by platform
+          // Build local set by platform, track failed per-server
           const localByPlatform: Record<string, Set<string>> = {}
           const localFailedByPlatform: Record<string, number> = {}
           for (const conv of localConvs) {
             if (!localByPlatform[conv.platform]) localByPlatform[conv.platform] = new Set()
             localByPlatform[conv.platform].add(conv.conversationId)
-            if (conv.syncStatus === 'failed') {
+            // Use per-server failed status, not global
+            const serverStatus = conv.syncServers?.[serverUrl]?.status
+            if (serverStatus === 'failed') {
               localFailedByPlatform[conv.platform] = (localFailedByPlatform[conv.platform] || 0) + 1
             }
           }
