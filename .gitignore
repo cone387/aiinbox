@@ -1,11 +1,13 @@
-# Binaries
+# Binaries (build outputs)
 bin/
 *.exe
+*.exe~
 *.dll
 *.so
 *.dylib
+aiinbox-desktop.log
 
-# Data
+# Runtime data
 data/
 
 # Dependencies
@@ -23,9 +25,12 @@ backend/internal/webui/dist/*
 # Environment
 .env
 
-# IDE
+# IDE / Editor
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
@@ -37,28 +42,29 @@ backend/vendor/
 # Logs
 *.log
 
-# Temp
-.git_commit_msg.txt
-
-# Test files in root
+# Test files (should be in extension/ or appropriate subdirectory)
 test-*.spec.ts
 test-*.js
+test-*.mjs
 test-*.txt
 playwright.config.ts
 test-results/
 .playwright-mcp/
 
-# MCP config
+# MCP config (local dev)
 .mcp.json
 extension/.mcp.json
 
 # TypeScript build artifacts
 tsconfig.tsbuildinfo
 
-# Claude Code
+# Claude Code / AI tools
 .claude/
+.kiro/
 
-# Root-level test dependencies (should be in extension/)
+# Root-level package files (use extension/package.json or frontend/package.json)
 /package.json
 /package-lock.json
-*.exe~  
+
+# Temp
+.git_commit_msg.txt
