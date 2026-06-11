@@ -35,6 +35,7 @@ rate_limit:
 cors:
   allowed_origins:
     - "http://localhost:9531"
+    - "http://localhost:9631"
     - "https://aiinbox.cone387.top"
     - "chrome-extension://*"
   allowed_methods:
