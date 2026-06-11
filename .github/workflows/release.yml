@@ -77,3 +77,64 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
+
+  build-macos-desktop:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Embed frontend into backend
+        run: |
+          rm -rf backend/internal/webui/dist
+          mkdir -p backend/internal/webui/dist
+          cp -r frontend/dist/. backend/internal/webui/dist/
+
+      - name: Install macOS dependencies
+        run: |
+          brew install pkg-config
+
+      - name: Build desktop app (macOS amd64)
+        working-directory: backend
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          LDFLAGS="-s -w -X github.com/cone387/aiinbox/backend/internal/updater.Version=${VERSION}"
+          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "${LDFLAGS}" -o "../release/aiinbox-desktop-${VERSION}-darwin-amd64" ./cmd/desktop
+
+      - name: Build desktop app (macOS arm64)
+        working-directory: backend
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          LDFLAGS="-s -w -X github.com/cone387/aiinbox/backend/internal/updater.Version=${VERSION}"
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "${LDFLAGS}" -o "../release/aiinbox-desktop-${VERSION}-darwin-arm64" ./cmd/desktop
+
+      - name: Package macOS desktop
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          cd release
+          zip "aiinbox-desktop-${VERSION}-darwin-amd64.zip" "aiinbox-desktop-${VERSION}-darwin-amd64"
+          zip "aiinbox-desktop-${VERSION}-darwin-arm64.zip" "aiinbox-desktop-${VERSION}-darwin-arm64"
+          rm -f "aiinbox-desktop-${VERSION}-darwin-amd64" "aiinbox-desktop-${VERSION}-darwin-arm64"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/aiinbox-desktop-*.zip
+          generate_release_notes: false

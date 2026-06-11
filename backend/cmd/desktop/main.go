@@ -15,9 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/cone387/aiinbox/backend/internal/server"
 	"github.com/cone387/aiinbox/backend/internal/updater"
@@ -71,19 +69,6 @@ func main() {
 
 	// Run systray (blocks until quit).
 	systray.Run(func() { onReady(srv) }, func() { onExit(srv) })
-}
-
-// fatalMsg shows a Windows MessageBox (or just logs on other platforms).
-func fatalMsg(title, msg string) {
-	log.Printf("%s: %s", title, msg)
-	if runtime.GOOS == "windows" {
-		user32 := syscall.NewLazyDLL("user32.dll")
-		msgBox := user32.NewProc("MessageBoxW")
-		titlePtr, _ := syscall.UTF16PtrFromString(title)
-		msgPtr, _ := syscall.UTF16PtrFromString(msg)
-		// MB_ICONERROR = 0x10
-		msgBox.Call(0, uintptr(unsafe.Pointer(msgPtr)), uintptr(unsafe.Pointer(titlePtr)), 0x10)
-	}
 }
 
 // onReady is called once the systray is initialised.
@@ -161,34 +146,6 @@ func checkForUpdate() {
 	if confirmMsg("\u68C0\u67E5\u66F4\u65B0", msg) {
 		openBrowser(result.UpdateURL)
 	}
-}
-
-// infoMsg shows an informational MessageBox (MB_ICONINFORMATION).
-func infoMsg(title, msg string) {
-	log.Printf("[INFO] %s: %s", title, msg)
-	if runtime.GOOS == "windows" {
-		user32 := syscall.NewLazyDLL("user32.dll")
-		msgBox := user32.NewProc("MessageBoxW")
-		titlePtr, _ := syscall.UTF16PtrFromString(title)
-		msgPtr, _ := syscall.UTF16PtrFromString(msg)
-		// MB_ICONINFORMATION = 0x40
-		msgBox.Call(0, uintptr(unsafe.Pointer(msgPtr)), uintptr(unsafe.Pointer(titlePtr)), 0x40)
-	}
-}
-
-// confirmMsg shows a Yes/No MessageBox. Returns true if user clicked Yes.
-func confirmMsg(title, msg string) bool {
-	log.Printf("[CONFIRM] %s: %s", title, msg)
-	if runtime.GOOS == "windows" {
-		user32 := syscall.NewLazyDLL("user32.dll")
-		msgBox := user32.NewProc("MessageBoxW")
-		titlePtr, _ := syscall.UTF16PtrFromString(title)
-		msgPtr, _ := syscall.UTF16PtrFromString(msg)
-		// MB_YESNO | MB_ICONQUESTION = 0x4 | 0x20 = 0x24
-		ret, _, _ := msgBox.Call(0, uintptr(unsafe.Pointer(msgPtr)), uintptr(unsafe.Pointer(titlePtr)), 0x24)
-		return ret == 6 // IDYES = 6
-	}
-	return false
 }
 
 // openBrowser opens the given URL in the user's default browser.
