@@ -9,8 +9,6 @@ services:
       # Host-local only; nginx reverse-proxies aiinbox.cone387.top here.
       - "127.0.0.1:9531:9531"
     volumes:
-      - aiinbox_data:/app/data
+      # SQLite db, exports and jwt_secret persist in the repo's ./data dir.
+      - ./data:/app/data
     restart: unless-stopped
-
-volumes:
-  aiinbox_data:

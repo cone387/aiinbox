@@ -18,6 +18,9 @@ ENV GOPROXY=https://goproxy.cn,direct \
     CGO_ENABLED=0
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
+# go.mod replaces getlantern/systray with a local fork, so the replacement
+# directory must be present before `go mod download`.
+COPY backend/third_party ./third_party
 RUN go mod download
 COPY backend/ ./
 # Replace the placeholder embed dir with the freshly built frontend.
