@@ -32,3 +32,8 @@ export async function batchDelete(ids: number[]): Promise<{ deleted: number }> {
   const { data } = await client.delete('/conversations', { data: { ids } })
   return data
 }
+
+export async function deleteAllConversations(): Promise<{ deleted: number }> {
+  const { data } = await client.delete('/conversations/all')
+  return data
+}

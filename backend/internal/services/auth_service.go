@@ -94,6 +94,25 @@ func (s *AuthService) Login(username, password string) (*TokenPair, error) {
 	return s.generateTokenPair(&user)
 }
 
+// ChangePassword verifies the current password and updates to the new one.
+func (s *AuthService) ChangePassword(userID uint, currentPassword, newPassword string) error {
+	var user models.User
+	if err := s.DB.First(&user, userID).Error; err != nil {
+		return ErrInvalidCredentials
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), s.Cfg.BcryptCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	return s.DB.Model(&user).Update("password_hash", string(hash)).Error
+}
+
 // GenerateAPIToken creates a long-lived API token for the user.
 func (s *AuthService) GenerateAPIToken(userID uint, name string) (*models.APIToken, error) {
 	token, err := generateRandomToken(32)

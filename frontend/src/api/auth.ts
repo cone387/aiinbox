@@ -17,6 +17,10 @@ export async function generateAPIToken(name?: string): Promise<{ api_token: stri
   return data
 }
 
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await client.put('/auth/password', { current_password: currentPassword, new_password: newPassword })
+}
+
 export function logout(): void {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')

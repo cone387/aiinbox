@@ -207,6 +207,17 @@ func (h *ConversationHandler) BatchDelete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
 }
 
+// DeleteAll deletes all conversations and messages for the authenticated user.
+func (h *ConversationHandler) DeleteAll(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	// Delete all messages belonging to user's conversations
+	h.DB.Where("conv_id IN (SELECT id FROM conversations WHERE user_id = ?)", userID).Delete(&models.Message{})
+	result := h.DB.Where("user_id = ?", userID).Delete(&models.Conversation{})
+
+	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
+}
+
 // MarkRead marks a conversation as read.
 func (h *ConversationHandler) MarkRead(c *gin.Context) {
 	userID := middleware.GetUserID(c)

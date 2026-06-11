@@ -1,6 +1,6 @@
-# AI Chat Collector (AI Inbox)
+# AI Inbox
 
-统一收集 AI 平台对话记录的工具，支持 ChatGPT、Gemini、通义千问、豆包。
+统一收集 AI 平台对话记录的工具，支持 ChatGPT、Gemini、通义千问、豆包、DeepSeek。
 
 ## 架构
 
@@ -92,7 +92,7 @@ auth:
 
 1. 点击插件图标，按提示完成账号授权（授权页打开服务端的 `/authorize` 页面，登录后一键授权，自动回填凭据）。
 2. **自助部署本地服务**：启动后端（`./aiinbox` 或 `./bin/aiinbox --config config.yaml`）后，插件会自动探测 `http://localhost:9531`，检测到本地服务时会在弹窗内提示，点击「连接」即可切换到本地服务并完成授权。
-3. 正常使用 AI 平台（ChatGPT / Gemini / 千问 / 豆包），对话自动收集；离线时本地缓存，恢复连接后回传。
+3. 正常使用 AI 平台（ChatGPT / Gemini / 千问 / 豆包 / DeepSeek），对话自动收集；离线时本地缓存，恢复连接后回传。
 
 ### 浏览与搜索
 
@@ -106,6 +106,7 @@ auth:
 | Gemini (gemini.google.com) | ✅ |
 | 通义千问 (tongyi.aliyun.com) | ✅ |
 | 豆包 (doubao.com) | ✅ |
+| DeepSeek (chat.deepseek.com) | ✅ |
 
 ## 技术栈
 

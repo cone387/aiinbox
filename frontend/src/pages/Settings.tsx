@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Card, Form, Input, Button, message, Modal, Typography } from 'antd'
 import { CopyOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
-import { generateAPIToken } from '../api/auth'
+import { generateAPIToken, changePassword } from '../api/auth'
+import { deleteAllConversations } from '../api/conversations'
 import { useAuthStore } from '../stores/authStore'
 
 const { Paragraph } = Typography
@@ -10,6 +11,9 @@ export default function Settings() {
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [tokenExpires, setTokenExpires] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
+  const [passwordForm] = Form.useForm()
   const logout = useAuthStore((s) => s.logout)
 
   async function handleGenerateToken() {
@@ -39,15 +43,35 @@ export default function Settings() {
     }
   }
 
+  async function handleChangePassword(values: { current_password: string; new_password: string }) {
+    setChangingPassword(true)
+    try {
+      await changePassword(values.current_password, values.new_password)
+      message.success('密码修改成功')
+      passwordForm.resetFields()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || '密码修改失败'
+      message.error(msg)
+    }
+    setChangingPassword(false)
+  }
+
   async function handleDeleteAll() {
     Modal.confirm({
       title: '删除所有数据',
       icon: <ExclamationCircleOutlined />,
       content: '此操作将删除所有对话数据，且不可恢复。确定继续？',
       okType: 'danger',
+      okText: '确认删除',
       onOk: async () => {
-        // This would need a dedicated endpoint; for now show message
-        message.info('请使用 API 进行批量删除操作')
+        setDeletingAll(true)
+        try {
+          const result = await deleteAllConversations()
+          message.success(`已删除 ${result.deleted} 条对话`)
+        } catch {
+          message.error('删除失败')
+        }
+        setDeletingAll(false)
       },
     })
   }
@@ -87,14 +111,16 @@ export default function Settings() {
 
       {/* Change Password */}
       <Card title="修改密码" style={{ marginBottom: '16px' }}>
-        <Form layout="vertical" onFinish={() => message.info('密码修改功能开发中')}>
-          <Form.Item label="当前密码" name="current_password" rules={[{ required: true }]}>
+        <Form form={passwordForm} layout="vertical" onFinish={handleChangePassword}>
+          <Form.Item label="当前密码" name="current_password" rules={[{ required: true, message: '请输入当前密码' }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item label="新密码" name="new_password" rules={[{ required: true, min: 6 }]}>
+          <Form.Item label="新密码" name="new_password" rules={[{ required: true, min: 6, message: '密码至少6个字符' }]}>
             <Input.Password />
           </Form.Item>
-          <Button type="primary" htmlType="submit">修改密码</Button>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={changingPassword}>修改密码</Button>
+          </Form.Item>
         </Form>
       </Card>
 
@@ -105,7 +131,7 @@ export default function Settings() {
             <p style={{ margin: 0, fontWeight: 500 }}>删除所有数据</p>
             <p style={{ margin: 0, fontSize: '12px', color: '#999' }}>删除所有对话记录，不可恢复</p>
           </div>
-          <Button danger onClick={handleDeleteAll}>删除</Button>
+          <Button danger onClick={handleDeleteAll} loading={deletingAll}>删除</Button>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>

@@ -88,6 +88,31 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, tokenPair)
 }
 
+// ChangePassword verifies the current password and updates to the new one.
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required,min=6,max=128"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation_error", "message": err.Error()})
+		return
+	}
+
+	if err := h.AuthService.ChangePassword(userID, req.CurrentPassword, req.NewPassword); err != nil {
+		if err == services.ErrInvalidCredentials {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_password", "message": "当前密码错误"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "message": "failed to change password"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // GenerateAPIToken creates a long-lived API token.
 func (h *AuthHandler) GenerateAPIToken(c *gin.Context) {
 	userID := middleware.GetUserID(c)

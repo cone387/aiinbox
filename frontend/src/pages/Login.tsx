@@ -28,7 +28,7 @@ export default function Login() {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
       <Card style={{ width: 400 }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '24px' }}>AI Chat Collector</h2>
+        <h2 style={{ textAlign: 'center', marginBottom: '24px' }}>AI Inbox</h2>
         <Tabs activeKey={activeTab} onChange={setActiveTab} centered items={[
           {
             key: 'login',

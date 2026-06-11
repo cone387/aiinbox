@@ -152,6 +152,7 @@ func main() {
 		protected.POST("/auth/token", authHandler.GenerateAPIToken)
 		protected.GET("/auth/tokens", authHandler.ListAPITokens)
 		protected.DELETE("/auth/token", authHandler.DeleteAPIToken)
+		protected.PUT("/auth/password", authHandler.ChangePassword)
 
 		// Sync routes
 		protected.POST("/conversations/sync", syncHandler.SyncConversation)
@@ -166,6 +167,7 @@ func main() {
 		protected.POST("/conversations/:id/read", convHandler.MarkRead)
 		protected.POST("/conversations/read-all", convHandler.MarkAllRead)
 		protected.DELETE("/conversations", convHandler.BatchDelete)
+		protected.DELETE("/conversations/all", convHandler.DeleteAll)
 
 		// Search routes
 		protected.GET("/search", searchHandler.Search)
