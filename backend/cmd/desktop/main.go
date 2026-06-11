@@ -97,7 +97,7 @@ func onReady(srv *server.Server) {
 	})
 
 	// Menu items (right-click)
-	mTitle := systray.AddMenuItem("AI Inbox", "")
+	mTitle := systray.AddMenuItem("\u25CF AI Inbox \u00B7 \u8FD0\u884C\u4E2D", srv.Addr())
 	mTitle.Disable()
 	systray.AddSeparator()
 	mBrowser := systray.AddMenuItem("打开浏览器", "Open AI Inbox in browser")

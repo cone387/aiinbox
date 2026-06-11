@@ -1,0 +1,8 @@
+feat: add password reset for self-hosted single-user mode
+
+- Add AuthService.ResetPassword() for single-user password reset
+- Add POST /api/v1/auth/reset-password endpoint (localhost only)
+- Add LocalhostOnly middleware to restrict access to 127.0.0.1/::1
+- Add ResetPassword.tsx page with new password form
+- Add "forgot password" link on Login page
+- Add "reset password" menu item to desktop systray tray
