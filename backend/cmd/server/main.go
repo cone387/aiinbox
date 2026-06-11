@@ -32,22 +32,17 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Resolve relative SQLite DSN to be relative to the executable's directory,
+	// Resolve relative SQLite DSN to be relative to the config file's directory,
 	// so the server always finds the same database regardless of the working directory.
 	if cfg.Database.Driver == "sqlite" && !filepath.IsAbs(cfg.Database.DSN) {
-		exePath, err := os.Executable()
-		if err == nil {
-			cfg.Database.DSN = filepath.Join(filepath.Dir(exePath), cfg.Database.DSN)
-		}
+		cfg.Database.DSN = filepath.Join(cfg.ConfigDir, cfg.Database.DSN)
 	}
 
 	// Ensure a strong signing key. The single-file binary ships without a config,
 	// so without this it would sign JWTs using the public placeholder secret.
-	secretDir := "data"
+	secretDir := filepath.Join(cfg.ConfigDir, "data")
 	if cfg.Database.Driver == "sqlite" && cfg.Database.DSN != "" {
 		secretDir = filepath.Dir(cfg.Database.DSN)
-	} else if exePath, err := os.Executable(); err == nil {
-		secretDir = filepath.Join(filepath.Dir(exePath), "data")
 	}
 	if generated, err := config.EnsureJWTSecret(cfg, secretDir); err != nil {
 		log.Fatalf("Failed to ensure JWT secret: %v", err)

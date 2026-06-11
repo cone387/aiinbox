@@ -25,6 +25,10 @@ type Config struct {
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
 	CORS      CORSConfig      `mapstructure:"cors"`
 	Log       LogConfig       `mapstructure:"log"`
+
+	// ConfigDir is the directory containing the config file.
+	// Relative paths (database DSN, export dir, etc.) are resolved from here.
+	ConfigDir string `json:"-"`
 }
 
 type ServerConfig struct {
@@ -137,6 +141,19 @@ func Load(configPath string) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Record the config file directory for resolving relative paths
+	if cfgFile := v.ConfigFileUsed(); cfgFile != "" {
+		if abs, err := filepath.Abs(cfgFile); err == nil {
+			cfg.ConfigDir = filepath.Dir(abs)
+		}
+	}
+	// Fallback: if no config file was found, use the current working directory
+	if cfg.ConfigDir == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			cfg.ConfigDir = cwd
+		}
 	}
 
 	return &cfg, nil
