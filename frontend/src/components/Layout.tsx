@@ -111,7 +111,7 @@ export default function Layout() {
 
   const navItems = [
     { key: '/stats', icon: <BarChartOutlined />, label: '统计' },
-    { key: '/tokens', icon: <KeyOutlined />, label: 'API Tokens' },
+    { key: '/tokens', icon: <KeyOutlined />, label: '接入令牌' },
     { key: '/settings', icon: <SettingOutlined />, label: '设置' },
   ]
 

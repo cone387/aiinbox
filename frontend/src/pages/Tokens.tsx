@@ -23,14 +23,14 @@ export default function Tokens() {
       const data = await listTokens()
       setTokens(data)
     } catch {
-      message.error('Failed to load tokens')
+      message.error('加载令牌失败')
     }
     setLoading(false)
   }
 
   async function handleCreate() {
     if (!newTokenName.trim()) {
-      message.warning('Please enter a token name')
+      message.warning('请输入令牌名称')
       return
     }
     setCreating(true)
@@ -40,26 +40,28 @@ export default function Tokens() {
       setShowCreateModal(false)
       setNewTokenName('')
       fetchTokens()
-      message.success('Token created')
+      message.success('令牌创建成功')
     } catch {
-      message.error('Failed to create token')
+      message.error('创建令牌失败')
     }
     setCreating(false)
   }
 
   function handleDelete(id: number, name: string) {
     Modal.confirm({
-      title: 'Delete Token',
+      title: '删除令牌',
       icon: <ExclamationCircleOutlined />,
-      content: `Are you sure you want to delete "${name}"? This cannot be undone and any services using this token will stop working.`,
+      content: `确定删除"${name}"吗？此操作不可撤销，使用该令牌的服务将停止工作。`,
       okType: 'danger',
+      okText: '删除',
+      cancelText: '取消',
       onOk: async () => {
         try {
           await deleteToken(id)
           fetchTokens()
-          message.success('Token deleted')
+          message.success('令牌已删除')
         } catch {
-          message.error('Failed to delete token')
+          message.error('删除令牌失败')
         }
       },
     })
@@ -67,18 +69,18 @@ export default function Tokens() {
 
   function copyToken(token: string) {
     navigator.clipboard.writeText(token)
-    message.success('Copied to clipboard')
+    message.success('已复制到剪贴板')
   }
 
   const columns = [
     {
-      title: 'Name',
+      title: '名称',
       dataIndex: 'name',
       key: 'name',
       render: (name: string) => <span style={{ fontWeight: 500 }}>{name}</span>,
     },
     {
-      title: 'Token',
+      title: '令牌',
       dataIndex: 'token',
       key: 'token',
       render: (token: string) => (
@@ -88,7 +90,7 @@ export default function Tokens() {
       ),
     },
     {
-      title: 'Expires',
+      title: '过期时间',
       dataIndex: 'expires_at',
       key: 'expires_at',
       render: (date: string) => {
@@ -97,18 +99,18 @@ export default function Tokens() {
       },
     },
     {
-      title: 'Last Used',
+      title: '最后使用',
       dataIndex: 'last_used',
       key: 'last_used',
-      render: (date: string) => date || <span style={{ color: '#999' }}>Never</span>,
+      render: (date: string) => date || <span style={{ color: '#999' }}>从未使用</span>,
     },
     {
-      title: 'Created',
+      title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
     },
     {
-      title: 'Actions',
+      title: '操作',
       key: 'actions',
       render: (_: unknown, record: APITokenView) => (
         <Button
@@ -124,26 +126,26 @@ export default function Tokens() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ margin: 0 }}>API Tokens</h2>
+        <h2 style={{ margin: 0 }}>接入令牌</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowCreateModal(true)}>
-          Create Token
+          创建令牌
         </Button>
       </div>
 
       <p style={{ color: '#666', marginBottom: '16px' }}>
-        API Tokens are used by the browser extension to authenticate with this server.
-        Copy the token when created - it won't be shown in full again.
+        接入令牌用于浏览器插件与本服务器的身份认证。
+        创建时请复制令牌 —— 之后将无法再次查看完整内容。
       </p>
 
       {/* Newly created token display */}
       {newlyCreated && (
         <Card style={{ marginBottom: '16px', borderColor: '#52c41a' }}>
           <div style={{ marginBottom: '8px' }}>
-            <Tag color="success">New Token Created</Tag>
+            <Tag color="success">新令牌已创建</Tag>
             <strong>{newlyCreated.name}</strong>
           </div>
           <p style={{ marginBottom: '8px', color: '#666', fontSize: '12px' }}>
-            Copy this token now. You won't be able to see it again.
+            请立即复制此令牌，之后将无法再次查看。
           </p>
           <Space>
             <Paragraph
@@ -153,11 +155,11 @@ export default function Tokens() {
               {newlyCreated.token}
             </Paragraph>
             <Button icon={<CopyOutlined />} onClick={() => copyToken(newlyCreated.token)}>
-              Copy
+              复制
             </Button>
           </Space>
           <div style={{ marginTop: '8px' }}>
-            <Button size="small" onClick={() => setNewlyCreated(null)}>Dismiss</Button>
+            <Button size="small" onClick={() => setNewlyCreated(null)}>关闭</Button>
           </div>
         </Card>
       )}
@@ -168,23 +170,24 @@ export default function Tokens() {
         rowKey="id"
         loading={loading}
         pagination={false}
-        locale={{ emptyText: 'No tokens yet. Create one to connect the browser extension.' }}
+        locale={{ emptyText: '暂无令牌。创建一个以连接浏览器插件。' }}
       />
 
       {/* Create Modal */}
       <Modal
-        title="Create API Token"
+        title="创建接入令牌"
         open={showCreateModal}
         onOk={handleCreate}
         onCancel={() => { setShowCreateModal(false); setNewTokenName('') }}
         confirmLoading={creating}
-        okText="Create"
+        okText="创建"
+        cancelText="取消"
       >
         <p style={{ marginBottom: '12px', color: '#666' }}>
-          Give your token a name to identify where it's used (e.g. "Chrome Extension", "Work Laptop").
+          为令牌取个名字以便识别用途（例如"Chrome 插件"、"办公电脑"）。
         </p>
         <Input
-          placeholder="Token name"
+          placeholder="令牌名称"
           value={newTokenName}
           onChange={(e) => setNewTokenName(e.target.value)}
           onPressEnter={handleCreate}
