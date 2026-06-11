@@ -79,6 +79,7 @@ jobs:
           generate_release_notes: true
 
   build-macos-desktop:
+    needs: build
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
