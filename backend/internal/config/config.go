@@ -149,9 +149,12 @@ func Load(configPath string) (*Config, error) {
 			cfg.ConfigDir = filepath.Dir(abs)
 		}
 	}
-	// Fallback: if no config file was found, use the current working directory
+	// Fallback: use exe directory for desktop mode (double-click exe),
+	// then fall back to current working directory.
 	if cfg.ConfigDir == "" {
-		if cwd, err := os.Getwd(); err == nil {
+		if exe, err := os.Executable(); err == nil {
+			cfg.ConfigDir = filepath.Dir(exe)
+		} else if cwd, err := os.Getwd(); err == nil {
 			cfg.ConfigDir = cwd
 		}
 	}

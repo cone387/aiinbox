@@ -60,6 +60,13 @@ jobs:
           build darwin  amd64 "aiinbox-server-${GITHUB_REF_NAME}-darwin-amd64"
           build darwin  arm64 "aiinbox-server-${GITHUB_REF_NAME}-darwin-arm64"
 
+      - name: Build desktop app (Windows)
+        working-directory: backend
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H=windowsgui" -o "../release/aiinbox-desktop-${GITHUB_REF_NAME}-windows-amd64.exe" ./cmd/desktop
+
       - name: Add example config
         run: cp config.yaml release/config.yaml.example
 

@@ -1,4 +1,4 @@
-.PHONY: all build build-bundle run dev test clean
+.PHONY: all build build-bundle build-desktop run dev test clean
 
 # Backend
 backend-deps:
@@ -12,6 +12,10 @@ backend-run:
 
 backend-test:
 	cd backend && go test ./...
+
+# Desktop (systray app)
+desktop-build:
+	cd backend && CGO_ENABLED=0 go build -ldflags=-H=windowsgui -o ../bin/aiinbox-desktop.exe ./cmd/desktop
 
 # Frontend
 frontend-deps:
