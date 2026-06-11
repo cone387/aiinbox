@@ -14,8 +14,9 @@ backend-test:
 	cd backend && go test ./...
 
 # Desktop (systray app)
+DESKTOP_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 desktop-build:
-	cd backend && CGO_ENABLED=0 go build -ldflags=-H=windowsgui -o ../bin/aiinbox-desktop.exe ./cmd/desktop
+	cd backend && CGO_ENABLED=0 go build -ldflags="-H=windowsgui -X github.com/cone387/aiinbox/backend/internal/updater.Version=$(DESKTOP_VERSION)" -o ../bin/aiinbox-desktop.exe ./cmd/desktop
 
 # Frontend
 frontend-deps:

@@ -65,7 +65,9 @@ jobs:
         env:
           CGO_ENABLED: '0'
         run: |
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H=windowsgui" -o "../release/aiinbox-desktop-${GITHUB_REF_NAME}-windows-amd64.exe" ./cmd/desktop
+          VERSION="${GITHUB_REF_NAME}"
+          LDFLAGS="-s -w -H=windowsgui -X github.com/cone387/aiinbox/backend/internal/updater.Version=${VERSION}"
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "${LDFLAGS}" -o "../release/aiinbox-desktop-${VERSION}-windows-amd64.exe" ./cmd/desktop
 
       - name: Add example config
         run: cp config.yaml release/config.yaml.example
