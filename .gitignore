@@ -61,3 +61,4 @@ tsconfig.tsbuildinfo
 # Root-level test dependencies (should be in extension/)
 /package.json
 /package-lock.json
+*.exe~  
