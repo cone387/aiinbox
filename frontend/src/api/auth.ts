@@ -12,6 +12,11 @@ export async function register(username: string, password: string): Promise<void
   await client.post('/auth/register', { username, password })
 }
 
+export async function getAuthStatus(): Promise<{ initialized: boolean }> {
+  const { data } = await client.get('/auth/status')
+  return data
+}
+
 export async function generateAPIToken(name?: string): Promise<{ api_token: string; expires_at: string }> {
   const { data } = await client.post('/auth/token', { name })
   return data

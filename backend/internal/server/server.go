@@ -128,6 +128,7 @@ func New(configPath string) (*Server, error) {
 
 	auth := v1.Group("/auth")
 	{
+		auth.GET("/status", authHandler.Status)
 		auth.POST("/register", authLimiter.Limit(middleware.IPKeyFunc), authHandler.Register)
 		auth.POST("/login", authLimiter.Limit(middleware.IPKeyFunc), authHandler.Login)
 		auth.POST("/refresh", authHandler.RefreshToken)
@@ -228,13 +229,28 @@ func (s *Server) DataDir() string {
 
 // Start begins listening and serving. It blocks until the server is stopped.
 func (s *Server) Start() error {
+	if err := s.Listen(); err != nil {
+		return err
+	}
+	return s.Serve()
+}
+
+// Listen binds the TCP listener without starting to serve requests.
+// Useful for early error detection (e.g. port conflicts) before systray takes over.
+func (s *Server) Listen() error {
 	ln, err := net.Listen("tcp", s.Addr())
 	if err != nil {
 		return err
 	}
 	s.listener = ln
 	s.httpSrv = &http.Server{Handler: s.Engine}
-	return s.httpSrv.Serve(ln)
+	return nil
+}
+
+// Serve starts serving HTTP requests on the already-bound listener.
+// Must be called after Listen().
+func (s *Server) Serve() error {
+	return s.httpSrv.Serve(s.listener)
 }
 
 // Shutdown gracefully shuts down the server.

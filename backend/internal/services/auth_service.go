@@ -20,10 +20,11 @@ import (
 )
 
 var (
-	ErrUserExists       = errors.New("username already exists")
+	ErrUserExists         = errors.New("username already exists")
 	ErrInvalidCredentials = errors.New("invalid username or password")
-	ErrTokenExpired     = errors.New("token expired")
-	ErrInvalidAuthCode  = errors.New("invalid or expired auth code")
+	ErrTokenExpired       = errors.New("token expired")
+	ErrInvalidAuthCode    = errors.New("invalid or expired auth code")
+	ErrRegistrationClosed = errors.New("registration is closed, system already initialized")
 )
 
 // authCodeEntry represents a short-lived authorization code.
@@ -53,8 +54,22 @@ type TokenPair struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
+// HasUsers returns true if at least one user exists in the system.
+func (s *AuthService) HasUsers() bool {
+	var count int64
+	s.DB.Model(&models.User{}).Count(&count)
+	return count > 0
+}
+
 // Register creates a new user.
 func (s *AuthService) Register(username, password string) (*models.User, error) {
+	// Check if any users exist (registration only allowed for first user)
+	var totalCount int64
+	s.DB.Model(&models.User{}).Count(&totalCount)
+	if totalCount > 0 {
+		return nil, ErrRegistrationClosed
+	}
+
 	// Check if user exists
 	var count int64
 	s.DB.Model(&models.User{}).Where("username = ?", username).Count(&count)

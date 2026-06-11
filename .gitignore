@@ -37,6 +37,9 @@ backend/vendor/
 # Logs
 *.log
 
+# Temp
+.git_commit_msg.txt
+
 # Test files in root
 test-*.spec.ts
 test-*.js

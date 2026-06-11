@@ -77,3 +77,6 @@ require (
 	modernc.org/memory v1.5.0 // indirect
 	modernc.org/sqlite v1.23.1 // indirect
 )
+
+// Local fork of getlantern/systray with left-click support.
+replace github.com/getlantern/systray => ./third_party/systray

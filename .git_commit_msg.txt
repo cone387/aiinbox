@@ -1,1 +1,0 @@
-fix: clear persisted sync state on load to avoid stale data  

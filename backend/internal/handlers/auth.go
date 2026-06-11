@@ -44,6 +44,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	user, err := h.AuthService.Register(req.Username, req.Password)
 	if err != nil {
+		if err == services.ErrRegistrationClosed {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "registration_closed",
+				"message": "系统已初始化，注册功能已关闭",
+			})
+			return
+		}
 		if err == services.ErrUserExists {
 			c.JSON(http.StatusConflict, gin.H{
 				"error":   "user_exists",
@@ -62,6 +69,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		"user_id":    user.ID,
 		"username":   user.Username,
 		"created_at": user.CreatedAt,
+	})
+}
+
+// Status returns whether the system has been initialized (has any users).
+func (h *AuthHandler) Status(c *gin.Context) {
+	hasUsers := h.AuthService.HasUsers()
+	c.JSON(http.StatusOK, gin.H{
+		"initialized": hasUsers,
 	})
 }
 
