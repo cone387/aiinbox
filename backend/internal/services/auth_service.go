@@ -109,6 +109,22 @@ func (s *AuthService) Login(username, password string) (*TokenPair, error) {
 	return s.generateTokenPair(&user)
 }
 
+// ResetPassword resets the password for the single user in self-hosted mode.
+// This is intended for the desktop "forgot password" flow.
+func (s *AuthService) ResetPassword(newPassword string) error {
+	var user models.User
+	if err := s.DB.First(&user).Error; err != nil {
+		return errors.New("no user found")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), s.Cfg.BcryptCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	return s.DB.Model(&user).Update("password_hash", string(hash)).Error
+}
+
 // ChangePassword verifies the current password and updates to the new one.
 func (s *AuthService) ChangePassword(userID uint, currentPassword, newPassword string) error {
 	var user models.User

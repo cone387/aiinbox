@@ -17,6 +17,11 @@ export async function getAuthStatus(): Promise<{ initialized: boolean }> {
   return data
 }
 
+export async function resetPassword(newPassword: string): Promise<{ ok: boolean; message: string }> {
+  const { data } = await client.post('/auth/reset-password', { new_password: newPassword })
+  return data
+}
+
 export async function generateAPIToken(name?: string): Promise<{ api_token: string; expires_at: string }> {
   const { data } = await client.post('/auth/token', { name })
   return data

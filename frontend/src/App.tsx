@@ -5,6 +5,7 @@ import { useAuthStore } from './stores/authStore'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Setup from './pages/Setup'
+import ResetPassword from './pages/ResetPassword'
 import Authorize from './pages/Authorize'
 import ConversationPanel from './pages/ConversationPanel'
 import Stats from './pages/Stats'
@@ -24,6 +25,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/setup" element={<Setup />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/authorize" element={<Authorize />} />
           <Route
             path="/"

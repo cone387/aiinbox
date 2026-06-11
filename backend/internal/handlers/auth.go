@@ -80,6 +80,24 @@ func (h *AuthHandler) Status(c *gin.Context) {
 	})
 }
 
+// ResetPassword resets the password for the single user (localhost only).
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req struct {
+		NewPassword string `json:"new_password" binding:"required,min=6,max=128"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation_error", "message": err.Error()})
+		return
+	}
+
+	if err := h.AuthService.ResetPassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "reset_failed", "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "密码已重置"})
+}
+
 // Login handles user login and returns JWT tokens.
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest

@@ -101,6 +101,7 @@ func onReady(srv *server.Server) {
 	mTitle.Disable()
 	systray.AddSeparator()
 	mBrowser := systray.AddMenuItem("打开浏览器", "Open AI Inbox in browser")
+	mResetPwd := systray.AddMenuItem("重置密码", "Reset password (localhost only)")
 	mDataDir := systray.AddMenuItem("打开数据目录", "Open data folder")
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "Quit AI Inbox")
@@ -118,6 +119,8 @@ func onReady(srv *server.Server) {
 			select {
 			case <-mBrowser.ClickedCh:
 				openBrowser(fmt.Sprintf("http://%s", srv.Addr()))
+			case <-mResetPwd.ClickedCh:
+				openBrowser(fmt.Sprintf("http://%s/reset-password", srv.Addr()))
 			case <-mDataDir.ClickedCh:
 				openDir(srv.DataDir())
 			case <-mQuit.ClickedCh:

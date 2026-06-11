@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -149,4 +150,23 @@ func (m *AuthMiddleware) ParseRefreshToken(tokenStr string) (*UserClaims, error)
 		return nil, fmt.Errorf("invalid token type, expected refresh token")
 	}
 	return claims, nil
+}
+
+// LocalhostOnly is a middleware that only allows requests from localhost.
+func LocalhostOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+		if err != nil {
+			host = c.Request.RemoteAddr
+		}
+		ip := net.ParseIP(host)
+		if ip == nil || (!ip.IsLoopback() && !ip.Equal(net.IPv4(127, 0, 0, 1))) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "forbidden",
+				"message": "this endpoint is only available from localhost",
+			})
+			return
+		}
+		c.Next()
+	}
 }

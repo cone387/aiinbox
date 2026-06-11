@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Card, Form, Input, Button, Spin } from 'antd'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthStatus } from '../api/auth'
@@ -53,6 +53,9 @@ export default function Login() {
           <Button type="primary" htmlType="submit" loading={loading} block>
             登录
           </Button>
+          <div style={{ textAlign: 'center', marginTop: 12 }}>
+            <Link to="/reset-password" style={{ fontSize: 13 }}>忘记密码？</Link>
+          </div>
         </Form>
       </Card>
     </div>

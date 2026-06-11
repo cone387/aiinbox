@@ -133,6 +133,7 @@ func New(configPath string) (*Server, error) {
 		auth.POST("/login", authLimiter.Limit(middleware.IPKeyFunc), authHandler.Login)
 		auth.POST("/refresh", authHandler.RefreshToken)
 		auth.POST("/exchange", authLimiter.Limit(middleware.IPKeyFunc), authHandler.ExchangeAuthCode)
+		auth.POST("/reset-password", middleware.LocalhostOnly(), authHandler.ResetPassword)
 	}
 
 	v1.GET("/authorize/validate", authHandler.AuthorizeRequest)
