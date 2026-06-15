@@ -68,3 +68,4 @@ tsconfig.tsbuildinfo
 
 # Temp
 .git_commit_msg.txt
+.commit_msg.txt
